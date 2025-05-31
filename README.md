@@ -299,3 +299,7 @@ MIT License
 If you encounter any issues, check the troubleshooting section above or run the diagnostic scripts:
 - `./validate-config.sh` - Check configuration
 - `./test-github-api.sh` - Test GitHub connectivity
+
+---
+
+*This project was created with AI assistance.*
