@@ -1,0 +1,30 @@
+{
+  "name": "github-inbox-bot",
+  "version": "1.0.0",
+  "description": "A Discord bot that reads GitHub notifications and sends them to a Discord channel",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "watch": "tsc --watch",
+    "test:github": "./test-github-api.sh",
+    "validate": "./validate-config.sh",
+    "setup": "./setup.sh"
+  },
+  "keywords": ["discord", "github", "notifications", "bot"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "node-cron": "^3.0.3",
+    "axios": "^1.6.7",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.19",
+    "@types/node-cron": "^3.0.11",
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2"
+  }
+}

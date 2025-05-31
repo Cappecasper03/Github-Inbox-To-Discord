@@ -1,0 +1,20 @@
+[Unit]
+Description=GitHub Inbox Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+User=cappo
+WorkingDirectory=/home/cappo/github-inbox-bot
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=github-inbox-bot
+
+[Install]
+WantedBy=multi-user.target
