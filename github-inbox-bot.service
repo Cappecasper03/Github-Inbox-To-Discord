@@ -6,15 +6,10 @@ After=network.target
 Type=simple
 User=cappo
 WorkingDirectory=/home/cappo/github-inbox-bot
-ExecStart=/usr/bin/node dist/index.js
+Environment=PATH=/home/cappo/github-inbox-bot/venv/bin
+ExecStart=/home/cappo/github-inbox-bot/venv/bin/python bot.py
 Restart=always
 RestartSec=10
-Environment=NODE_ENV=production
-
-# Logging
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=github-inbox-bot
 
 [Install]
 WantedBy=multi-user.target

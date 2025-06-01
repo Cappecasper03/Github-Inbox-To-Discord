@@ -1,5 +1,25 @@
-node_modules/
-dist/
+# Environment variables
 .env
-*.log
+
+# Python cache and bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+
+# Bot runtime files
+bot.log
+bot_debug.log
+bot.pid
+last_check.json
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
 .DS_Store
+Thumbs.db
