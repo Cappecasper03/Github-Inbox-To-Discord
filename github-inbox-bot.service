@@ -10,6 +10,8 @@ Environment=PATH=/home/cappo/github-inbox-bot/venv/bin
 ExecStart=/home/cappo/github-inbox-bot/venv/bin/python bot.py
 Restart=always
 RestartSec=10
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

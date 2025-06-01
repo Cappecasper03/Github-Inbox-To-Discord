@@ -106,13 +106,13 @@ install_service() {
     # Check if configuration exists
     if [ ! -f ".env" ]; then
         print_error "Configuration file (.env) not found!"
-        print_info "Please run 'python setup.py' first to configure the bot."
+        print_info "Please run 'python3 setup.py' first to configure the bot."
         exit 1
     fi
 
     # Test configuration
     echo "🔍 Testing configuration..."
-    if ! python test_config.py; then
+    if ! ${CURRENT_DIR}/venv/bin/python test_config.py; then
         print_error "Configuration test failed!"
         print_info "Please fix configuration issues before installing service."
         exit 1
