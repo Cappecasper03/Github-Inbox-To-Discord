@@ -24,7 +24,7 @@ if [ -f "bot.pid" ]; then
     PID=$(cat bot.pid)
     if kill -0 $PID 2>/dev/null; then
         echo "⚠️  Bot is already running (PID: $PID)"
-        echo "   Use ./stop.sh to stop it first."
+        echo "   Use ./dev-manager.sh stop to stop it."
         exit 1
     else
         rm bot.pid
@@ -37,5 +37,5 @@ echo $! > bot.pid
 
 echo "✅ Bot started successfully!"
 echo "   PID: $(cat bot.pid)"
-echo "   Logs: ./logs.sh"
-echo "   Stop: ./stop.sh"
+echo "   Logs: ./dev-manager.sh logs"
+echo "   Stop: ./dev-manager.sh stop"

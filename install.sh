@@ -142,19 +142,25 @@ if python test_config.py; then
     echo
     echo "🎉 Installation completed successfully!"
     echo
-    echo "Usage:"
-    echo "  Start the bot:           ./start.sh"
-    echo "  Stop the bot:            ./stop.sh"
-    echo "  Check bot status:        ./status.sh"
-    echo "  View bot logs:           ./logs.sh"
-    echo "  Run configuration test:  python test_config.py"
-    echo "  Reconfigure:             python setup.py"
+    echo "📋 Next Steps:"
     echo
-    echo "To install as a systemd service:"
-    echo "  sudo cp github-inbox-bot.service /etc/systemd/system/"
-    echo "  sudo systemctl daemon-reload"
-    echo "  sudo systemctl enable github-inbox-bot"
-    echo "  sudo systemctl start github-inbox-bot"
+    echo "🔧 Development Mode:"
+    echo "  Start bot:               ./dev-manager.sh start"
+    echo "  Debug mode:              ./dev-manager.sh debug"
+    echo "  Check status:            ./dev-manager.sh status"
+    echo "  View logs:               ./dev-manager.sh logs"
+    echo "  Stop bot:                ./dev-manager.sh stop"
+    echo
+    echo "🚀 Production Mode:"
+    echo "  Install as service:      ./service-manager.sh install"
+    echo "  Start service:           ./service-manager.sh start"
+    echo "  Check service status:    ./service-manager.sh status"
+    echo "  View service logs:       ./service-manager.sh logs"
+    echo "  Enable auto-start:       ./service-manager.sh enable"
+    echo
+    echo "⚙️ Configuration:"
+    echo "  Test configuration:      python test_config.py"
+    echo "  Reconfigure:             python setup.py"
     echo
 else
     echo

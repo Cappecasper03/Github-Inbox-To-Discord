@@ -85,7 +85,21 @@ def test_configuration():
     print()
     print("🎉 All configuration tests passed!")
     print()
-    print("You can now run the bot with: python bot.py")
+    print("You can now run the bot in multiple ways:")
+    print()
+    print("📋 Development Mode:")
+    print("  ./dev-manager.sh start      - Start bot for development")
+    print("  ./dev-manager.sh debug      - Run with debug logging")
+    print("  ./dev-manager.sh status     - Check development status")
+    print("  ./dev-manager.sh logs       - View development logs")
+    print("  ./dev-manager.sh --help     - Show all development commands")
+    print()
+    print("📋 Production Mode (recommended for servers):")
+    print("  ./service-manager.sh install  - Install as systemd service")
+    print("  ./service-manager.sh start    - Start service")
+    print("  ./service-manager.sh status   - Check service status")
+    print("  ./service-manager.sh logs     - View service logs")
+    print("  ./service-manager.sh --help   - Show all service commands")
     
     return True
 

@@ -2,11 +2,7 @@
 
 > **🤖 AI-Generated Project:** This entire Discord bot project was created by AI (GitHub Copilot) - including all code, documentation, scripts, and configuration files. No human coding was involved in the creation of this project.
 
-A Discord bot that reads your personal GitHub notifications and sends them to a Discord channel.
-
-## 🎉 Project Complete!
-
-You now have a fully functional Discord bot that monitors your GitHub notifications and sends them to a Discord channel.
+A Discord bot that reads your personal GitHub notifications and sends them to a Discord channel with comprehensive management scripts for both development and production environments.
 
 ## ✨ Key Features
 
@@ -16,192 +12,396 @@ You now have a fully functional Discord bot that monitors your GitHub notificati
 - ✅ **Smart filtering** - Only shows new notifications since last check
 - ✅ **Configurable intervals** - Set how often to check for updates
 - ✅ **Discord commands** - Manual check and status commands (`!check`, `!status`)
-- ✅ **Background service** - Can run as systemd service
+- ✅ **Unified service management** - Single script for all systemd operations
 - ✅ **Development mode** - Debug logging for troubleshooting
-- ✅ **Easy management** - Simple start/stop/status scripts
+- ✅ **Production ready** - Systemd service with auto-restart
+- ✅ **Easy management** - Comprehensive script suite
 
-## 📁 Project Structure
+## 🔑 Required Credentials Setup
 
-```
-github-inbox-bot/
-├── bot.py                     # Main bot application
-├── requirements.txt           # Python dependencies
-├── .env.example              # Environment template
-├── .gitignore                # Git ignore rules
-├── README.md                 # Comprehensive documentation
-├── setup.py                  # Interactive configuration setup
-├── test_config.py            # Configuration validation
-├── dev.py                    # Development runner with debug logging
-├── install.sh                # Complete installation script
-├── start.sh                  # Start bot in background
-├── stop.sh                   # Stop running bot
-├── status.sh                 # Check bot status
-├── logs.sh                   # View real-time logs
-└── github-inbox-bot.service  # Systemd service file
-```
+Before you can run the bot, you need to obtain several tokens and IDs. Here's how to get each one:
 
-## 🚀 Quick Start
+### 🤖 Discord Bot Token
+
+1. **Go to Discord Developer Portal:**
+   - Visit: https://discord.com/developers/applications
+   - Log in with your Discord account
+
+2. **Create a new application:**
+   - Click "New Application"
+   - Give it a name (e.g., "GitHub Inbox Bot")
+   - Click "Create"
+
+3. **Create a bot:**
+   - Go to the "Bot" section in the left sidebar
+   - Click "Add Bot" → "Yes, do it!"
+   - Under "Token" section, click "Copy" to get your `DISCORD_BOT_TOKEN`
+
+4. **Set bot permissions:**
+   - In "Bot" section, enable these permissions:
+     - ✅ Send Messages
+     - ✅ Use Slash Commands
+     - ✅ Embed Links
+     - ✅ Read Message History
+
+### 🔗 Discord Channel ID
+
+1. **Enable Developer Mode in Discord:**
+   - Open Discord → User Settings (gear icon)
+   - Go to "Advanced" → Enable "Developer Mode"
+
+2. **Get Channel ID:**
+   - Right-click on the channel where you want notifications
+   - Click "Copy Channel ID"
+   - This is your `DISCORD_CHANNEL_ID`
+
+### 🐙 GitHub Personal Access Token
+
+1. **Go to GitHub Settings:**
+   - Visit: https://github.com/settings/tokens
+   - Log in to your GitHub account
+
+2. **Create a new token:**
+   - Click "Generate new token" → "Generate new token (classic)"
+   - Give it a note (e.g., "Discord Bot Notifications")
+
+3. **Select scopes:**
+   - ✅ `notifications` - To read your notifications
+   - ✅ `repo` - To get private repository notifications
+
+4. **Generate and copy:**
+   - Click "Generate token"
+   - Copy the token immediately (you won't see it again!)
+   - This is your `GITHUB_TOKEN`
+
+### ⚙️ Additional Configuration
+
+- **`CHECK_INTERVAL`**: How often to check for notifications (in seconds)
+  - Default: `300` (5 minutes)
+  - Minimum recommended: `60` (1 minute)
+  - For testing: `30` (30 seconds)
+
+## 🚀 Quick Start Guide
+
+### Method 1: Automated Setup (Recommended)
 
 1. **Run the installation script:**
    ```bash
    ./install.sh
    ```
-   This will:
-   - Automatically install Python 3 and pip3 if missing
-   - Create a virtual environment
-   - Install all dependencies
-   - Run the configuration setup
-   - Test the configuration
+   This automatically:
+   - Installs Python 3 and pip3 if missing
+   - Creates a virtual environment
+   - Installs all dependencies
+   - Runs the configuration setup
+   - Tests the configuration
 
-2. **Start the bot:**
+2. **Choose your deployment method:**
+
+   **For Development/Testing:**
    ```bash
-   ./start.sh
+   ./dev-manager.sh start      # Start bot for development
+   ./dev-manager.sh debug      # Run with debug logging  
+   ./dev-manager.sh status     # Check development status
+   ./dev-manager.sh logs       # View development logs
+   ./dev-manager.sh --help     # Show all development commands
    ```
 
-3. **Check bot status:**
+   **For Production (Recommended):**
    ```bash
-   ./status.sh
+   ./service-manager.sh install    # Install as systemd service
+   ./service-manager.sh start      # Start the service
+   ./service-manager.sh status     # Check service status
+   ./service-manager.sh logs       # View service logs
    ```
 
-4. **View logs:**
-   ```bash
-   ./logs.sh
-   ```
-
-5. **Stop the bot:**
-   ```bash
-   ./stop.sh
-   ```
-
-## 🔧 Configuration Required
-
-Before running, you'll need:
-
-1. **Discord Bot Token** - Create at https://discord.com/developers/applications
-2. **GitHub Personal Access Token** - Create at https://github.com/settings/tokens
-   - Required scopes: `notifications`, `repo`
-3. **Discord Channel ID** - Enable Developer Mode and copy channel ID
-4. **Bot permissions** - Invite bot to server with "Send Messages" permission
-
-## ⚙️ Manual Setup (Alternative to Quick Start)
+### Method 2: Manual Setup
 
 1. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
 
-2. **Create a `.env` file with your credentials:**
-   ```env
-   DISCORD_BOT_TOKEN=your_discord_bot_token_here
-   GITHUB_TOKEN=your_github_personal_access_token_here
-   DISCORD_CHANNEL_ID=your_discord_channel_id_here
-   CHECK_INTERVAL=300
-   ```
-
-3. **GitHub Personal Access Token:**
-   - Go to GitHub Settings → Developer settings → Personal access tokens
-   - Create a new token with `notifications` and `repo` scopes
-
-4. **Discord Bot Setup:**
-   - Go to Discord Developer Portal
-   - Create a new application and bot
-   - Copy the bot token
-   - Invite the bot to your server with "Send Messages" permissions
-
-5. **Get Discord Channel ID:**
-   - Enable Developer Mode in Discord
-   - Right-click on the channel and copy ID
-
-6. **Run the bot:**
+2. **Configure the bot:**
    ```bash
-   python bot.py
+   python setup.py     # Interactive setup
+   python test_config.py   # Verify configuration
    ```
 
-## 📋 Configuration
+3. **Run the bot:**
+   ```bash
+   # For Development
+   ./dev-manager.sh start       # Background execution
+   ./dev-manager.sh debug       # Foreground with debug logging
+   
+   # For Production  
+   ./service-manager.sh install # Install as service
+   ./service-manager.sh start   # Start the service
+   ```
 
-- `CHECK_INTERVAL`: How often to check for notifications (in seconds, default: 300 = 5 minutes)
-- The bot will only send new notifications since the last check
-- Notifications are automatically marked as read after being sent to Discord
+## 🛠️ Comprehensive Script Reference
 
-## 🛠️ Available Scripts
+### 🚀 Setup & Configuration Scripts
 
-- `install.sh` - Complete installation and setup (installs Python/pip if needed)
-- `start.sh` - Start the bot in the background
-- `stop.sh` - Stop the running bot
-- `status.sh` - Check if the bot is running and show status
-- `logs.sh` - View bot logs in real-time
-- `setup.py` - Interactive configuration setup
-- `test_config.py` - Test the current configuration
-- `dev.py` - Run bot in development mode with debug logging
+#### `setup.py` - Interactive Configuration
+Interactive setup script to configure the bot with necessary credentials.
+```bash
+python setup.py
+```
+Prompts for:
+- Discord Bot Token
+- GitHub Personal Access Token  
+- Discord Channel ID
+- Check Interval (optional)
 
-## 🚀 Running as a Service
+#### `install.sh` - Complete Installation
+Comprehensive installation script that handles everything automatically.
+```bash
+./install.sh
+```
+Features:
+- Auto-detects and installs Python 3 if missing
+- Creates virtual environment
+- Installs all dependencies
+- Runs configuration setup
+- Tests configuration
+- Works on Ubuntu/Debian, RHEL/CentOS, Fedora, and macOS
 
-To run the bot as a systemd service:
+#### `test_config.py` - Configuration Validation
+Tests the bot configuration to ensure everything is set up correctly.
+```bash
+python test_config.py
+```
+Validates:
+- Environment variables
+- GitHub API connection
+- Discord token format
+- Check interval format
+
+### 🌟 Service Management (Production)
+
+#### `service-manager.sh` - Unified Service Controller
+**The main script for production deployments!** Handles all systemd service operations with a single command.
 
 ```bash
-sudo cp github-inbox-bot.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable github-inbox-bot
-sudo systemctl start github-inbox-bot
+# Installation & Setup
+./service-manager.sh install     # Install as systemd service
+./service-manager.sh uninstall   # Remove the service completely
+
+# Service Control
+./service-manager.sh start       # Start the service
+./service-manager.sh stop        # Stop the service  
+./service-manager.sh restart     # Restart the service
+./service-manager.sh status      # Show detailed service status
+
+# Boot Management
+./service-manager.sh enable      # Enable auto-start on boot
+./service-manager.sh disable     # Disable auto-start on boot
+
+# Log Management
+./service-manager.sh logs                    # Show last 50 lines
+./service-manager.sh logs --lines 100       # Show last 100 lines
+./service-manager.sh logs --follow          # Follow logs in real-time
+
+# Maintenance
+./service-manager.sh reload      # Reload service configuration
+
+# Help
+./service-manager.sh --help      # Show complete command reference
 ```
 
-Check service status:
+**Features:**
+- ✅ Color-coded output for success/error/warning messages
+- ✅ Comprehensive error checking and validation
+- ✅ Tests configuration before installing service
+- ✅ Flexible log viewing with line count options
+- ✅ Safety checks (prevents running as root, validates dependencies)
+- ✅ Auto-restart on failure with 10-second delay
+- ✅ Logs to systemd journal for centralized logging
+
+### 🔧 Development & Testing Manager
+
+#### `dev-manager.sh` - Development Environment Controller
+**The main script for development and testing!** Handles all development operations with a single command.
+
 ```bash
-sudo systemctl status github-inbox-bot
+# Development Control
+./dev-manager.sh start       # Start bot in development mode (background)
+./dev-manager.sh stop        # Stop the development bot
+./dev-manager.sh restart     # Restart the development bot
+./dev-manager.sh status      # Show bot status and process info
+
+# Development Tools
+./dev-manager.sh debug       # Run bot in foreground with debug logging
+./dev-manager.sh test        # Test configuration and dependencies
+./dev-manager.sh clean       # Clean up log files and temporary data
+
+# Log Management
+./dev-manager.sh logs                    # Show last 50 lines
+./dev-manager.sh logs --lines 100       # Show last 100 lines
+./dev-manager.sh logs --follow          # Follow logs in real-time
+
+# Help
+./dev-manager.sh --help      # Show complete command reference
 ```
 
-View service logs:
-```bash
-sudo journalctl -u github-inbox-bot -f
-```
+**Features:**
+- ✅ Color-coded output for success/error/warning messages
+- ✅ Comprehensive error checking and validation
+- ✅ Debug mode with enhanced logging
+- ✅ Flexible log viewing with line count options
+- ✅ Development environment testing and cleanup
+- ✅ Background process management with PID tracking
 
-## 🔧 Development
+### 🐛 Development & Debugging
 
-Run in development mode with debug logging:
+#### `dev.py` - Development Mode
 ```bash
 python dev.py
 ```
+- Enhanced debug logging
+- Console output with timestamps
+- Logs to `bot_debug.log`
+- Useful for troubleshooting
 
-This enables detailed logging to both console and `bot_debug.log` file.
+## 💡 Pro Tips
 
-## 🆘 Troubleshooting
+### For Developers
+- Use **Development Manager** (`./dev-manager.sh`) for development and testing
+- Run `./dev-manager.sh debug` for enhanced debugging with console output
+- Test configuration changes with `./dev-manager.sh test`
+- Monitor logs in real-time during development with `./dev-manager.sh logs --follow`
 
-1. **Bot not responding**: Check if it's running with `./status.sh`
-2. **Configuration errors**: Run `python test_config.py` to verify setup
-3. **Permission issues**: Ensure bot has "Send Messages" permission in Discord
-4. **GitHub API errors**: Verify your GitHub token has correct scopes
-5. **Channel not found**: Verify the Discord channel ID is correct
+### For Production
+- Use **Service Manager** (`./service-manager.sh`) for production deployments
+- Enable auto-start: `./service-manager.sh enable`
+- Set up log monitoring: `./service-manager.sh logs --follow`
+- The service automatically restarts if it crashes (10-second delay)
 
-## 🎮 Bot Commands
+### Performance Optimization
+- Adjust `CHECK_INTERVAL` based on your notification volume
+- Lower intervals = more real-time, higher API usage
+- Higher intervals = less API usage, delayed notifications
 
-Use these commands in the configured Discord channel:
+## 📈 Example Workflows
 
-- `!check` - Manually check for new GitHub notifications
-- `!status` - Show bot status and configuration information
+### First-Time Setup
+```bash
+# Complete setup in one go
+./install.sh                    # Handles everything automatically
+./service-manager.sh install    # Set up as service
+./service-manager.sh start      # Start running
+./service-manager.sh logs       # Verify it's working
+```
 
-## 📝 Next Steps
+### Daily Development
+```bash
+# Start development session
+./dev-manager.sh start          # Start bot in development mode
+./dev-manager.sh logs --follow  # Monitor in terminal
 
-1. Run `./install.sh` to set everything up
-2. Follow the interactive configuration prompts  
-3. Start the bot with `./start.sh`
-4. Enjoy automated GitHub notifications in Discord!
+# Make changes to bot.py
+./dev-manager.sh restart        # Restart with changes
+# OR
+./dev-manager.sh stop           # Stop bot  
+./dev-manager.sh start          # Start with changes
+```
 
-## 🆘 Need Help?
+### Production Deployment
+```bash
+# Deploy to server
+git clone <your-repo>
+cd github-inbox-bot
+./install.sh                    # Setup everything
+./service-manager.sh install    # Install as service
+./service-manager.sh enable     # Auto-start on boot
+./service-manager.sh start      # Start immediately
 
-- Run `python test_config.py` to verify configuration
-- Check `./status.sh` to see if bot is running
-- View logs with `./logs.sh`
-- See troubleshooting section above for common issues
+# Ongoing maintenance
+./service-manager.sh status     # Check health
+./service-manager.sh logs       # Check logs
+./service-manager.sh restart    # Apply updates
+```
 
-## 📋 Notification Types Supported
+### Updating the Bot
+```bash
+# Service mode (Production)
+./service-manager.sh stop       # Stop service
+git pull                        # Get updates
+pip install -r requirements.txt # Update dependencies  
+./service-manager.sh start      # Restart service
 
-- Issues
-- Pull Requests
-- Releases
-- Security Advisories
-- Discussions
-- And more GitHub notification types
+# Development mode
+./dev-manager.sh stop           # Stop bot
+git pull                        # Get updates
+pip install -r requirements.txt # Update dependencies
+./dev-manager.sh start          # Restart bot
+```
+
+## 🤝 Getting Help
+
+### Self-Help Resources
+1. **Configuration Issues:**
+   ```bash
+   python test_config.py       # Validate setup
+   ```
+
+2. **Runtime Issues:**
+   ```bash
+   ./service-manager.sh status  # Check service health (production)
+   ./dev-manager.sh status      # Check development status  
+   ./service-manager.sh logs    # View recent logs (production)
+   ./dev-manager.sh logs        # View recent logs (development)
+   ```
+
+3. **Script Help:**
+   ```bash
+   ./service-manager.sh --help  # Complete service command reference
+   ./dev-manager.sh --help      # Complete development command reference
+   ```
+
+### Common Solutions
+- **"Service not found"** → Run `./service-manager.sh install`
+- **"Configuration invalid"** → Run `python setup.py` again
+- **"Permission denied"** → Don't run as root, use regular user
+- **"Bot not responding"** → Check Discord permissions and token
+
+### Debug Information
+When seeking help, include:
+```bash
+# System information
+uname -a
+python3 --version
+
+# Configuration test
+python test_config.py
+
+# Service status  
+./service-manager.sh status
+
+# Recent logs
+./service-manager.sh logs --lines 20
+```
+
+## 🎉 Success! 
+
+You now have a fully functional GitHub notifications bot with:
+
+✅ **Complete automation** - Set it and forget it  
+✅ **Professional deployment** - Production-ready systemd service  
+✅ **Developer-friendly** - Easy testing and debugging tools  
+✅ **Comprehensive management** - Unified script for all operations  
+✅ **Rich notifications** - Beautiful Discord embeds with full GitHub context  
+✅ **Reliable operation** - Auto-restart on failures, centralized logging  
+
+## 📚 Additional Resources
+
+- **Discord.py Docs:** https://discordpy.readthedocs.io/
+- **GitHub API Docs:** https://docs.github.com/en/rest/activity/notifications
+- **Systemd Service Guide:** `man systemd.service`
 
 ---
 
-**Happy coding! 🚀** Your GitHub notifications will now appear beautifully formatted in your Discord channel.
+**🚀 Happy coding!** Your GitHub notifications will now appear beautifully formatted in your Discord channel with professional-grade reliability and management tools.
+
+**Created by AI** *(GitHub Copilot)* - A complete, production-ready solution with zero human coding required!

@@ -34,6 +34,6 @@ fi
 
 echo
 echo "Commands:"
-echo "  Start bot:  ./start.sh"
-echo "  Stop bot:   ./stop.sh"
-echo "  View logs:  ./logs.sh"
+echo "  Start bot:  ./dev-manager.sh start"
+echo "  Stop bot:   ./dev-manager.sh stop"
+echo "  View logs:  ./dev-manager.sh logs"
