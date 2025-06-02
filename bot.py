@@ -3,6 +3,7 @@ from discord.ext import commands, tasks
 import asyncio
 import os
 import json
+import re
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from github import Github
@@ -89,16 +90,53 @@ class GitHubNotificationBot:
                 await ctx.send("This command can only be used in the configured notifications channel.")
                 return
                 
-            await ctx.send("🔍 Checking for GitHub notifications...")
+            # Send initial checking message
+            checking_msg = await ctx.send("🔍 Checking for GitHub notifications...")
+            
             try:
                 count = await self.fetch_and_send_notifications()
                 if count > 0:
-                    await ctx.send(f"✅ Sent {count} new notifications!")
+                    # Update the message with success info
+                    embed = discord.Embed(
+                        title="✅ Manual Check Complete",
+                        description=f"Found and sent **{count}** new notification{'s' if count != 1 else ''}!",
+                        color=discord.Color.green()
+                    )
+                    embed.add_field(
+                        name="📬 What's new?", 
+                        value="Check the messages above for details about each notification.", 
+                        inline=False
+                    )
+                    embed.set_footer(text="GitHub Notification Bot")
+                    await checking_msg.edit(content="", embed=embed)
                 else:
-                    await ctx.send("📭 No new notifications found.")
+                    # Update with no notifications found
+                    embed = discord.Embed(
+                        title="📭 Manual Check Complete",
+                        description="No new notifications found at this time.",
+                        color=discord.Color.blue()
+                    )
+                    embed.add_field(
+                        name="💡 This means", 
+                        value="• All your notifications have been seen\n• No new activity since last check\n• Your GitHub repos are quiet right now", 
+                        inline=False
+                    )
+                    embed.set_footer(text="GitHub Notification Bot")
+                    await checking_msg.edit(content="", embed=embed)
             except Exception as e:
                 logger.error(f"Error during manual check: {e}")
-                await ctx.send(f"❌ Error checking notifications: {str(e)}")
+                error_embed = discord.Embed(
+                    title="❌ Check Failed",
+                    description="Something went wrong while checking for notifications.",
+                    color=discord.Color.red()
+                )
+                error_embed.add_field(
+                    name="Error Details", 
+                    value=f"```{str(e)[:1000]}```", 
+                    inline=False
+                )
+                error_embed.set_footer(text="GitHub Notification Bot")
+                await checking_msg.edit(content="", embed=error_embed)
                 
         @self.bot.command(name='status')
         async def bot_status(ctx):
@@ -111,8 +149,7 @@ class GitHubNotificationBot:
                 user = self.github.get_user()
                 embed = discord.Embed(
                     title="🤖 GitHub Notification Bot Status",
-                    color=discord.Color.blue(),
-                    timestamp=datetime.now(timezone.utc)
+                    color=discord.Color.blue()
                 )
                 embed.add_field(name="GitHub User", value=user.login, inline=True)
                 embed.add_field(name="Check Interval", value=f"{self.check_interval} seconds", inline=True)
@@ -168,23 +205,187 @@ class GitHubNotificationBot:
         
         notification_info = notification_types.get(subject.type, {'emoji': '📢', 'color': discord.Color.blue()})
         
+        # Create more meaningful reason descriptions
+        reason_descriptions = {
+            'assign': 'You were assigned to this',
+            'author': 'You created this',
+            'comment': 'New comment on this',
+            'invitation': 'You were invited to collaborate',
+            'manual': 'You subscribed to this',
+            'mention': 'You were mentioned in this',
+            'review_requested': 'Your review was requested',
+            'security_alert': 'Security alert for this repository',
+            'state_change': 'Status changed on this',
+            'subscribed': 'You are watching this',
+            'team_mention': 'Your team was mentioned'
+        }
+        
+        reason_text = reason_descriptions.get(notification.reason, notification.reason.replace('_', ' ').title())
+        
+        # Build a more descriptive title
+        action_context = f"{reason_text} {subject.type.lower()}"
+        
+        # Fix URL conversion for different types
+        display_url = subject.url
+        if subject.url:
+            display_url = subject.url.replace('api.github.com/repos', 'github.com')
+            if '/pulls/' in display_url:
+                display_url = display_url.replace('/pulls/', '/pull/')
+            elif '/issues/' in display_url:
+                display_url = display_url.replace('/issues/', '/issues/')
+        
         embed = discord.Embed(
             title=f"{notification_info['emoji']} {subject.title}",
-            url=subject.url.replace('api.github.com/repos', 'github.com').replace('/pulls/', '/pull/'),
-            color=notification_info['color'],
-            timestamp=datetime.now(timezone.utc)
+            description=f"**{action_context}**",
+            url=display_url,
+            color=notification_info['color']
         )
         
-        embed.add_field(name="Repository", value=f"[{repo.full_name}]({repo.html_url})", inline=True)
-        embed.add_field(name="Type", value=subject.type, inline=True)
-        embed.add_field(name="Reason", value=notification.reason.replace('_', ' ').title(), inline=True)
+        # Add repository info with more context
+        embed.add_field(
+            name="📁 Repository", 
+            value=f"[{repo.full_name}]({repo.html_url})", 
+            inline=True
+        )
         
+        # Add type with more description
+        type_descriptions = {
+            'Issue': 'Bug report or feature request',
+            'PullRequest': 'Code contribution',
+            'Release': 'New version release',
+            'Discussion': 'Community discussion',
+            'SecurityAdvisory': 'Security vulnerability notice'
+        }
+        type_desc = type_descriptions.get(subject.type, subject.type)
+        embed.add_field(
+            name="📋 Type", 
+            value=f"{subject.type}\n*{type_desc}*", 
+            inline=True
+        )
+        
+        # Add reason with emoji and description
+        reason_emojis = {
+            'assign': '👤',
+            'author': '✍️',
+            'comment': '💬',
+            'mention': '📢',
+            'review_requested': '👀',
+            'security_alert': '🔒',
+            'state_change': '🔄',
+            'subscribed': '👁️'
+        }
+        reason_emoji = reason_emojis.get(notification.reason, '📌')
+        embed.add_field(
+            name="🔔 Why you got this", 
+            value=f"{reason_emoji} {reason_text}", 
+            inline=True
+        )
+        
+        # Add timing information
         if notification.updated_at:
             embed.add_field(
-                name="Updated", 
+                name="⏰ Last Activity", 
                 value=f"<t:{int(notification.updated_at.timestamp())}:R>", 
                 inline=True
             )
+        
+        # Add unread status and detailed state information
+        status_info = "🔵 Unread" if notification.unread else "✅ Read"
+        
+        # Get detailed status information based on notification type
+        detailed_status = None
+        try:
+            if subject.type == 'PullRequest':
+                # Extract PR number from URL
+                import re
+                pr_match = re.search(r'/pulls/(\d+)', subject.url)
+                if pr_match:
+                    pr_number = int(pr_match.group(1))
+                    pr = repo.get_pull(pr_number)
+                    state_emoji = {
+                        'open': '🟢 Open',
+                        'closed': '🔴 Closed',
+                        'merged': '🟣 Merged'
+                    }
+                    pr_state = 'merged' if pr.merged else pr.state
+                    detailed_status = f"{state_emoji.get(pr_state, pr_state.title())}"
+                    if pr.draft:
+                        detailed_status += " (Draft)"
+                    
+            elif subject.type == 'Issue':
+                # Extract issue number from URL
+                issue_match = re.search(r'/issues/(\d+)', subject.url)
+                if issue_match:
+                    issue_number = int(issue_match.group(1))
+                    issue = repo.get_issue(issue_number)
+                    state_emoji = {
+                        'open': '🟢 Open',
+                        'closed': '🔴 Closed'
+                    }
+                    detailed_status = f"{state_emoji.get(issue.state, issue.state.title())}"
+                    
+            elif subject.type == 'Release':
+                # For releases, show if it's a prerelease or latest
+                releases = list(repo.get_releases())
+                if releases:
+                    latest_release = releases[0]
+                    if subject.title == latest_release.title:
+                        detailed_status = "🚀 Latest Release"
+                        if latest_release.prerelease:
+                            detailed_status += " (Pre-release)"
+                    else:
+                        detailed_status = "📦 Release"
+                        
+        except Exception as e:
+            logger.debug(f"Could not get detailed status for {subject.type}: {e}")
+            
+        embed.add_field(
+            name="📬 Status", 
+            value=f"{status_info}\n{detailed_status}" if detailed_status else status_info, 
+            inline=True
+        )
+        
+        # Add quick action hint with more context
+        action_hints = {
+            'Issue': 'Click to view issue details and comments',
+            'PullRequest': 'Click to review code changes',
+            'Release': 'Click to see what\'s new in this release',
+            'Discussion': 'Click to join the conversation',
+            'SecurityAdvisory': 'Click to view security details'
+        }
+        
+        # Customize action hint based on detailed status and reason
+        action_hint = action_hints.get(subject.type, 'Click to view on GitHub')
+        
+        if subject.type == 'PullRequest' and detailed_status:
+            if 'Open' in detailed_status:
+                if notification.reason == 'review_requested':
+                    action_hint = "Click to review and approve/request changes"
+                elif notification.reason == 'mention':
+                    action_hint = "Click to see where you were mentioned"
+                else:
+                    action_hint = "Click to review the code changes"
+            elif 'Merged' in detailed_status:
+                action_hint = "Click to see the merged changes"
+            elif 'Closed' in detailed_status:
+                action_hint = "Click to see why it was closed"
+                
+        elif subject.type == 'Issue' and detailed_status:
+            if 'Open' in detailed_status:
+                if notification.reason == 'assign':
+                    action_hint = "Click to work on this assigned issue"
+                elif notification.reason == 'mention':
+                    action_hint = "Click to see where you were mentioned"
+                else:
+                    action_hint = "Click to view issue details and help resolve"
+            elif 'Closed' in detailed_status:
+                action_hint = "Click to see how it was resolved"
+        
+        embed.add_field(
+            name="💡 Next Step", 
+            value=action_hint, 
+            inline=False
+        )
         
         # Add repository owner avatar as thumbnail
         if repo.owner and repo.owner.avatar_url:
@@ -240,6 +441,16 @@ class GitHubNotificationBot:
             
             logger.info(f"Found {len(new_notifications)} new notifications")
             
+            # Log details about what we found
+            if new_notifications:
+                notification_summary = []
+                for notification in new_notifications:
+                    summary = f"{notification.subject.type}: {notification.subject.title[:50]}... ({notification.reason})"
+                    notification_summary.append(summary)
+                logger.info(f"New notifications: {'; '.join(notification_summary[:3])}")
+                if len(notification_summary) > 3:
+                    logger.info(f"... and {len(notification_summary) - 3} more")
+            
             # Send notifications to Discord
             sent_count = 0
             for notification in reversed(new_notifications):  # Send oldest first
@@ -247,6 +458,9 @@ class GitHubNotificationBot:
                     embed = self.format_notification_embed(notification)
                     await channel.send(embed=embed)
                     sent_count += 1
+                    
+                    # Log what we sent
+                    logger.info(f"Sent notification: {notification.subject.type} '{notification.subject.title}' from {notification.repository.full_name} (reason: {notification.reason})")
                     
                     # Small delay to avoid rate limiting
                     await asyncio.sleep(1)
