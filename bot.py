@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from github import Github
 import logging
 import time
+import requests
 
 # Load environment variables
 load_dotenv()
@@ -182,6 +183,117 @@ class GitHubNotificationBot:
             except Exception as e:
                 logger.error(f"Error getting status: {e}")
                 await ctx.send(f"❌ Error getting status: {str(e)}")
+
+        @self.bot.command(name='markread')
+        async def mark_all_read(ctx):
+            """Mark all GitHub notifications as read"""
+            if ctx.channel.id != self.channel_id:
+                await ctx.send("This command can only be used in the configured notifications channel.")
+                return
+                
+            # Send initial processing message
+            processing_msg = await ctx.send("🔄 Marking all GitHub notifications as read...")
+            
+            try:
+                # Use GitHub API to mark all notifications as read
+                url = "https://api.github.com/notifications"
+                
+                response = requests.put(
+                    url,
+                    headers={
+                        'Authorization': f'Bearer {self.github_token}',
+                        'Accept': 'application/vnd.github+json',
+                        'X-GitHub-Api-Version': '2022-11-28'
+                    },
+                    json={
+                        'read': True,
+                        'last_read_at': datetime.now(timezone.utc).isoformat()
+                    }
+                )
+                
+                if response.status_code == 202:  # Accepted - async processing
+                    embed = discord.Embed(
+                        title="✅ Mark as Read - Processing",
+                        description="All notifications are being marked as read in the background.",
+                        color=discord.Color.green()
+                    )
+                    embed.add_field(
+                        name="📝 Note", 
+                        value="This may take a moment for large numbers of notifications. Future checks will only show new notifications.", 
+                        inline=False
+                    )
+                    embed.set_footer(text="GitHub Notification Bot")
+                    await processing_msg.edit(content="", embed=embed)
+                    
+                elif response.status_code == 205:  # Reset Content - immediate success
+                    embed = discord.Embed(
+                        title="✅ All Notifications Marked as Read",
+                        description="Successfully marked all GitHub notifications as read.",
+                        color=discord.Color.green()
+                    )
+                    embed.add_field(
+                        name="🎉 Result", 
+                        value="Future notification checks will only show new activity!", 
+                        inline=False
+                    )
+                    embed.set_footer(text="GitHub Notification Bot")
+                    await processing_msg.edit(content="", embed=embed)
+                    
+                else:
+                    # Handle error cases
+                    error_embed = discord.Embed(
+                        title="❌ Failed to Mark Notifications as Read",
+                        description=f"GitHub API returned status code: {response.status_code}",
+                        color=discord.Color.red()
+                    )
+                    if response.text:
+                        error_embed.add_field(
+                            name="Error Details", 
+                            value=f"```{response.text[:1000]}```", 
+                            inline=False
+                        )
+                    error_embed.set_footer(text="GitHub Notification Bot")
+                    await processing_msg.edit(content="", embed=error_embed)
+                    
+            except Exception as e:
+                logger.error(f"Error marking all notifications as read: {e}")
+                error_embed = discord.Embed(
+                    title="❌ Command Failed",
+                    description="Something went wrong while marking notifications as read.",
+                    color=discord.Color.red()
+                )
+                error_embed.add_field(
+                    name="Error Details", 
+                    value=f"```{str(e)[:1000]}```", 
+                    inline=False
+                )
+                error_embed.set_footer(text="GitHub Notification Bot")
+                await processing_msg.edit(content="", embed=error_embed)
+
+    def mark_notification_as_read(self, notification_id):
+        """Mark a single notification thread as read on GitHub"""
+        try:
+            url = f"https://api.github.com/notifications/threads/{notification_id}"
+            
+            response = requests.patch(
+                url,
+                headers={
+                    'Authorization': f'Bearer {self.github_token}',
+                    'Accept': 'application/vnd.github+json',
+                    'X-GitHub-Api-Version': '2022-11-28'
+                }
+            )
+            
+            if response.status_code == 205:  # Reset Content - success
+                logger.debug(f"Successfully marked notification {notification_id} as read")
+                return True
+            else:
+                logger.warning(f"Failed to mark notification {notification_id} as read: HTTP {response.status_code}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error marking notification {notification_id} as read: {e}")
+            return False
 
     def load_last_check(self):
         """Load the timestamp of the last notification check"""
@@ -499,11 +611,13 @@ class GitHubNotificationBot:
             
             # Send notifications to Discord
             sent_count = 0
+            successfully_sent_notifications = []
             for notification in reversed(new_notifications):  # Send oldest first
                 try:
                     embed = self.format_notification_embed(notification)
                     await channel.send(embed=embed)
                     sent_count += 1
+                    successfully_sent_notifications.append(notification)
                     
                     # Log what we sent
                     logger.info(f"Sent notification: {notification.subject.type} '{notification.subject.title}' from {notification.repository.full_name} (reason: {notification.reason})")
@@ -513,6 +627,12 @@ class GitHubNotificationBot:
                     
                 except Exception as e:
                     logger.error(f"Error sending notification for {notification.subject.title}: {e}")
+            
+            # Mark successfully sent notifications as read on GitHub
+            if successfully_sent_notifications:
+                logger.info(f"Marking {len(successfully_sent_notifications)} notifications as read on GitHub...")
+                for notification in successfully_sent_notifications:
+                    self.mark_notification_as_read(notification.id)
             
             # Save current time as last check
             self.save_last_check(datetime.now(get_system_timezone()))
