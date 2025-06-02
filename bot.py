@@ -4,13 +4,26 @@ import asyncio
 import os
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from github import Github
 import logging
+import time
 
 # Load environment variables
 load_dotenv()
+
+# Get system timezone
+def get_system_timezone():
+    """Get the system's timezone"""
+    # Get timezone offset in seconds
+    if time.daylight:
+        offset_seconds = -time.altzone
+    else:
+        offset_seconds = -time.timezone
+    
+    # Create timezone object
+    return timezone(timedelta(seconds=offset_seconds))
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -180,9 +193,9 @@ class GitHubNotificationBot:
                     timestamp_str = data['last_check']
                     last_check = datetime.fromisoformat(timestamp_str)
                     
-                    # Ensure timezone awareness - convert to UTC if naive
+                    # Ensure timezone awareness - convert to system timezone if naive
                     if last_check.tzinfo is None:
-                        last_check = last_check.replace(tzinfo=timezone.utc)
+                        last_check = last_check.replace(tzinfo=get_system_timezone())
                     
                     logger.debug(f"Loaded last check time: {last_check}")
                     return last_check
@@ -194,9 +207,9 @@ class GitHubNotificationBot:
     def save_last_check(self, timestamp):
         """Save the timestamp of the current check"""
         try:
-            # Ensure the timestamp is timezone-aware UTC
+            # Ensure the timestamp is timezone-aware with system timezone
             if timestamp.tzinfo is None:
-                timestamp = timestamp.replace(tzinfo=timezone.utc)
+                timestamp = timestamp.replace(tzinfo=get_system_timezone())
             
             with open(self.last_check_file, 'w') as f:
                 json.dump({'last_check': timestamp.isoformat()}, f)
@@ -459,12 +472,12 @@ class GitHubNotificationBot:
                     notification_time = n.updated_at
                     # Ensure notification time is timezone-aware
                     if notification_time.tzinfo is None:
-                        notification_time = notification_time.replace(tzinfo=timezone.utc)
+                        notification_time = notification_time.replace(tzinfo=get_system_timezone())
                     
                     # Ensure last_check is timezone-aware
                     last_check_tz = last_check
                     if last_check_tz.tzinfo is None:
-                        last_check_tz = last_check_tz.replace(tzinfo=timezone.utc)
+                        last_check_tz = last_check_tz.replace(tzinfo=get_system_timezone())
                     
                     if notification_time > last_check_tz:
                         new_notifications.append(n)
@@ -502,7 +515,7 @@ class GitHubNotificationBot:
                     logger.error(f"Error sending notification for {notification.subject.title}: {e}")
             
             # Save current time as last check
-            self.save_last_check(datetime.now(timezone.utc))
+            self.save_last_check(datetime.now(get_system_timezone()))
             
             return sent_count
             
