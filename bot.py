@@ -176,16 +176,31 @@ class GitHubNotificationBot:
             if os.path.exists(self.last_check_file):
                 with open(self.last_check_file, 'r') as f:
                     data = json.load(f)
-                    return datetime.fromisoformat(data['last_check'])
+                    # Parse the timestamp and ensure it's timezone-aware
+                    timestamp_str = data['last_check']
+                    last_check = datetime.fromisoformat(timestamp_str)
+                    
+                    # Ensure timezone awareness - convert to UTC if naive
+                    if last_check.tzinfo is None:
+                        last_check = last_check.replace(tzinfo=timezone.utc)
+                    
+                    logger.debug(f"Loaded last check time: {last_check}")
+                    return last_check
         except Exception as e:
             logger.warning(f"Could not load last check time: {e}")
+            logger.debug(f"Last check file content may be corrupted, will reset")
         return None
 
     def save_last_check(self, timestamp):
         """Save the timestamp of the current check"""
         try:
+            # Ensure the timestamp is timezone-aware UTC
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            
             with open(self.last_check_file, 'w') as f:
                 json.dump({'last_check': timestamp.isoformat()}, f)
+            logger.debug(f"Saved last check time: {timestamp}")
         except Exception as e:
             logger.error(f"Could not save last check time: {e}")
 
@@ -381,12 +396,6 @@ class GitHubNotificationBot:
             elif 'Closed' in detailed_status:
                 action_hint = "Click to see how it was resolved"
         
-        embed.add_field(
-            name="💡 Next Step", 
-            value=action_hint, 
-            inline=False
-        )
-        
         # Add repository owner avatar as thumbnail
         if repo.owner and repo.owner.avatar_url:
             embed.set_thumbnail(url=repo.owner.avatar_url)
@@ -415,26 +424,50 @@ class GitHubNotificationBot:
             
             # Fetch notifications
             logger.debug("Fetching GitHub notifications...")
-            if last_check:
-                notifications = user.get_notifications(
-                    all=False,  # Only unread notifications
-                    participating=False,  # Include all notifications, not just participating
-                    since=last_check
-                )
-            else:
-                notifications = user.get_notifications(
-                    all=False,  # Only unread notifications
-                    participating=False  # Include all notifications, not just participating
-                )
+            try:
+                if last_check:
+                    logger.debug(f"Fetching notifications since: {last_check}")
+                    notifications = user.get_notifications(
+                        all=False,  # Only unread notifications
+                        participating=False,  # Include all notifications, not just participating
+                        since=last_check
+                    )
+                else:
+                    logger.debug("Fetching all notifications (no last check time)")
+                    notifications = user.get_notifications(
+                        all=False,  # Only unread notifications
+                        participating=False  # Include all notifications, not just participating
+                    )
+            except Exception as e:
+                logger.error(f"Failed to fetch notifications from GitHub API: {e}")
+                raise
             
             # Convert to list and sort by updated time (newest first)
-            notifications_list = list(notifications)
-            notifications_list.sort(key=lambda x: x.updated_at, reverse=True)
+            try:
+                notifications_list = list(notifications)
+                logger.debug(f"Retrieved {len(notifications_list)} notifications from GitHub")
+                notifications_list.sort(key=lambda x: x.updated_at, reverse=True)
+            except Exception as e:
+                logger.error(f"Failed to process notifications list: {e}")
+                raise
             
             # Filter out notifications we've already seen
             new_notifications = []
             if last_check:
-                new_notifications = [n for n in notifications_list if n.updated_at > last_check]
+                # Ensure both timestamps are timezone-aware for comparison
+                for n in notifications_list:
+                    notification_time = n.updated_at
+                    # Ensure notification time is timezone-aware
+                    if notification_time.tzinfo is None:
+                        notification_time = notification_time.replace(tzinfo=timezone.utc)
+                    
+                    # Ensure last_check is timezone-aware
+                    last_check_tz = last_check
+                    if last_check_tz.tzinfo is None:
+                        last_check_tz = last_check_tz.replace(tzinfo=timezone.utc)
+                    
+                    if notification_time > last_check_tz:
+                        new_notifications.append(n)
             else:
                 # If no last check, limit to recent notifications to avoid spam
                 new_notifications = notifications_list[:10]
@@ -480,7 +513,7 @@ class GitHubNotificationBot:
             logger.error(f"Full traceback: {traceback.format_exc()}")
             raise
 
-    @tasks.loop(seconds=300)  # Default interval, will be updated
+    @tasks.loop()  # No default interval, will be set dynamically
     async def check_notifications(self):
         """Periodic task to check for new GitHub notifications"""
         try:
@@ -500,7 +533,7 @@ class GitHubNotificationBot:
     async def before_check_notifications(self):
         """Wait for bot to be ready before starting the task"""
         await self.bot.wait_until_ready()
-        # Update the task interval based on configuration
+        # Set the task interval based on configuration
         self.check_notifications.change_interval(seconds=self.check_interval)
         logger.info(f"Started notification checker with {self.check_interval} second interval")
 
