@@ -27,7 +27,22 @@ class GitHubNotificationBot:
         if not self.github_token:
             raise ValueError("GITHUB_TOKEN environment variable is required")
         
+        logger.info("Initializing GitHub API client...")
         self.github = Github(self.github_token)
+        
+        # Test GitHub connection and permissions
+        try:
+            user = self.github.get_user()
+            logger.info(f"GitHub API connection successful for user: {user.login}")
+            
+            # Test notification access
+            # Note: Just getting notifications to test API access
+            notifications = user.get_notifications(all=False)
+            notifications_list = list(notifications)
+            logger.info(f"GitHub notifications API access confirmed (found {len(notifications_list)} recent notifications)")
+        except Exception as e:
+            logger.warning(f"GitHub API test failed: {e}")
+            # Don't raise here, let it fail later with better error handling
         
         # Discord setup
         self.discord_token = os.getenv('DISCORD_BOT_TOKEN')
@@ -187,13 +202,29 @@ class GitHubNotificationBot:
             
             # Get last check time
             last_check = self.load_last_check()
+            logger.debug(f"Last check time: {last_check}")
+            
+            # Verify GitHub connection
+            try:
+                user = self.github.get_user()
+                logger.debug(f"GitHub API connection successful for user: {user.login}")
+            except Exception as e:
+                logger.error(f"GitHub API connection failed: {e}")
+                raise
             
             # Fetch notifications
-            notifications = self.github.get_user().get_notifications(
-                all=False,  # Only unread notifications
-                participating=False,  # Include all notifications, not just participating
-                since=last_check if last_check else None
-            )
+            logger.debug("Fetching GitHub notifications...")
+            if last_check:
+                notifications = user.get_notifications(
+                    all=False,  # Only unread notifications
+                    participating=False,  # Include all notifications, not just participating
+                    since=last_check
+                )
+            else:
+                notifications = user.get_notifications(
+                    all=False,  # Only unread notifications
+                    participating=False  # Include all notifications, not just participating
+                )
             
             # Convert to list and sort by updated time (newest first)
             notifications_list = list(notifications)
@@ -230,6 +261,9 @@ class GitHubNotificationBot:
             
         except Exception as e:
             logger.error(f"Error fetching notifications: {e}")
+            # Log the full traceback for debugging
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             raise
 
     @tasks.loop(seconds=300)  # Default interval, will be updated
@@ -244,6 +278,9 @@ class GitHubNotificationBot:
                 logger.info("No new notifications found")
         except Exception as e:
             logger.error(f"Error in periodic notification check: {e}")
+            # Log the full traceback for debugging
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
 
     @check_notifications.before_loop
     async def before_check_notifications(self):
