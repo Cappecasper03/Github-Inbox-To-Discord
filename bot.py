@@ -552,10 +552,14 @@ class GitHubNotificationBot:
             try:
                 if last_check:
                     logger.debug(f"Fetching notifications since: {last_check}")
+                    # Note: GitHub's 'since' parameter filters on updated_at, but we want to be careful
+                    # to not miss notifications that were updated at exactly the same time
+                    # So we fetch slightly before our last check and filter manually
+                    since_time = last_check - timedelta(minutes=1)  # Fetch 1 minute before to be safe
                     notifications = user.get_notifications(
                         all=False,  # Only unread notifications
                         participating=False,  # Include all notifications, not just participating
-                        since=last_check
+                        since=since_time
                     )
                 else:
                     logger.debug("Fetching all notifications (no last check time)")
@@ -579,6 +583,7 @@ class GitHubNotificationBot:
             # Filter out notifications we've already seen
             new_notifications = []
             if last_check:
+                logger.debug(f"Filtering notifications newer than: {last_check}")
                 # Ensure both timestamps are timezone-aware for comparison
                 for n in notifications_list:
                     notification_time = n.updated_at
@@ -591,11 +596,16 @@ class GitHubNotificationBot:
                     if last_check_tz.tzinfo is None:
                         last_check_tz = last_check_tz.replace(tzinfo=get_system_timezone())
                     
+                    # Only include notifications that are strictly newer than our last check
                     if notification_time > last_check_tz:
                         new_notifications.append(n)
+                        logger.debug(f"Including notification: {n.subject.title} (updated: {notification_time})")
+                    else:
+                        logger.debug(f"Skipping notification: {n.subject.title} (updated: {notification_time}, not newer than {last_check_tz})")
             else:
                 # If no last check, limit to recent notifications to avoid spam
                 new_notifications = notifications_list[:10]
+                logger.debug(f"No last check time - limiting to {len(new_notifications)} most recent notifications")
             
             logger.info(f"Found {len(new_notifications)} new notifications")
             
@@ -634,8 +644,22 @@ class GitHubNotificationBot:
                 for notification in successfully_sent_notifications:
                     self.mark_notification_as_read(notification.id)
             
-            # Save current time as last check
-            self.save_last_check(datetime.now(get_system_timezone()))
+            # Save last check time based on the latest notification processed or current time
+            if new_notifications:
+                # Use the timestamp of the latest notification we processed
+                latest_notification_time = max(n.updated_at for n in new_notifications)
+                # Ensure it's timezone-aware
+                if latest_notification_time.tzinfo is None:
+                    latest_notification_time = latest_notification_time.replace(tzinfo=get_system_timezone())
+                self.save_last_check(latest_notification_time)
+                logger.debug(f"Updated last check time to latest notification time: {latest_notification_time}")
+            else:
+                # Only update if we had no previous check time (first run)
+                if last_check is None:
+                    self.save_last_check(datetime.now(get_system_timezone()))
+                    logger.debug(f"Set initial last check time: {datetime.now(get_system_timezone())}")
+                else:
+                    logger.debug("No new notifications and last check exists - not updating last check time")
             
             return sent_count
             
