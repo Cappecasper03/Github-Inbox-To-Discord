@@ -30,15 +30,16 @@ This GitHub Action automatically fetches your GitHub notifications and sends new
 Go to your repository → Settings → Secrets and variables → Actions
 
 Add the following **Repository Secret**:
+
 - `DISCORD_WEBHOOK_URL`: Your Discord webhook URL
 
 ### 4. Set Up GitHub Token (Optional but Recommended)
 
-The action uses the default `GITHUB_TOKEN` which has access to the repository it's running in. For personal notifications, you might want to create a Personal Access Token:
+The action uses the default `PRIVATE_GITHUB_TOKEN` which has access to the repository it's running in. For personal notifications, you might want to create a Personal Access Token:
 
 1. Go to GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
 2. Generate a new token with `notifications` scope
-3. Add it as a repository secret named `GITHUB_TOKEN` (this will override the default)
+3. Add it as a repository secret named `PRIVATE_GITHUB_TOKEN` (this will override the default)
 
 ### 5. Initialize Repository Variable
 
@@ -74,6 +75,7 @@ on:
 ### Notification Types
 
 The bot handles various GitHub notification types:
+
 - 🟢 **Issues** (Green)
 - 🔵 **Pull Requests** (Blue)  
 - 🟣 **Releases** (Purple)
@@ -108,7 +110,7 @@ The bot handles various GitHub notification types:
 
 ## File Structure
 
-```
+```text
 ├── .github/
 │   └── workflows/
 │       └── check-notifications.yml  # GitHub Action workflow

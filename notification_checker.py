@@ -16,12 +16,12 @@ import hashlib
 
 class GitHubNotificationBot:
     def __init__(self):
-        self.github_token = os.getenv('GITHUB_TOKEN')
+        self.github_token = os.getenv('PRIVATE_GITHUB_TOKEN')
         self.discord_webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
         self.last_check_time = os.getenv('LAST_CHECK_TIME')
         
         if not self.github_token:
-            raise ValueError("GITHUB_TOKEN environment variable is required")
+            raise ValueError("PRIVATE_GITHUB_TOKEN environment variable is required")
         if not self.discord_webhook_url:
             raise ValueError("DISCORD_WEBHOOK_URL environment variable is required")
         
