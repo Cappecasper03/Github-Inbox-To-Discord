@@ -1,6 +1,9 @@
 name: Check GitHub Notifications and Send to Discord
 
 on:
+  schedule:
+    # Run every 15 minutes
+    - cron: '*/15 * * * *'
   push:
     branches:
       - master
