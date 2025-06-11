@@ -159,15 +159,6 @@ class GitHubNotificationBot:
                 return False
         
         return True
-    
-    def update_last_check_time(self):
-        """Update the last check time to current time"""
-        current_time = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-        print(f"Updating last check time to: {current_time}")
-        # Note: This only updates for the current session
-        # For persistent storage, you'd need to write to a file or database
-        self.last_check_time = current_time
-        return current_time
 
     def run(self):
         """Main execution function"""
@@ -179,35 +170,15 @@ class GitHubNotificationBot:
         print(f"Found {len(notifications)} notifications")
         
         if notifications:
-            # Filter out notifications we might have already sent
-            # This is a simple deduplication based on notification ID
-            unique_notifications = []
-            seen_ids = set()
-            
-            for notif in notifications:
-                notif_id = notif.get('id')
-                if notif_id and notif_id not in seen_ids:
-                    unique_notifications.append(notif)
-                    seen_ids.add(notif_id)
-            
-            print(f"Unique notifications to send: {len(unique_notifications)}")
-              # Send to Discord
-            if unique_notifications:
-                success = self.send_to_discord(unique_notifications)
-                if success:
-                    print("✅ Successfully processed all notifications")
-                    self.update_last_check_time()  # Update last check time after successful processing
-                else:
-                    print("❌ Some notifications failed to send")
-                    sys.exit(1)
+            # Send all notifications to Discord without filtering
+            success = self.send_to_discord(notifications)
+            if success:
+                print("✅ Successfully processed all notifications")
             else:
-                print("No unique notifications to send")
-                # Even if no notifications to send, update the check time
-                self.update_last_check_time()
+                print("❌ Some notifications failed to send")
+                sys.exit(1)
         else:
             print("No new notifications found")
-            # Update check time even if no notifications found
-            self.update_last_check_time()
 
 
 if __name__ == "__main__":
