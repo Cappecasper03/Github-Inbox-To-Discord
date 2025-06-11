@@ -30,7 +30,7 @@ class GitHubNotificationBot:
             'Accept': 'application/vnd.github+json',
             'X-GitHub-Api-Version': '2022-11-28'
         }
-    
+        
     def get_notifications(self) -> List[Dict]:
         """Fetch GitHub notifications"""
         url = 'https://api.github.com/notifications'
@@ -41,7 +41,15 @@ class GitHubNotificationBot:
         
         # If we have a last check time, only get notifications since then
         if self.last_check_time:
-            params['since'] = self.last_check_time
+            # Validate that last_check_time is a proper ISO 8601 datetime
+            # If it's just "0" or invalid, skip the since parameter
+            try:
+                # Try to parse as ISO 8601 datetime
+                datetime.fromisoformat(self.last_check_time.replace('Z', '+00:00'))
+                params['since'] = self.last_check_time
+            except (ValueError, AttributeError):
+                print(f"Invalid LAST_CHECK_TIME format: {self.last_check_time}. Fetching all notifications.")
+                # Don't add since parameter, will fetch all unread notifications
         
         try:
             response = requests.get(url, headers=self.headers, params=params)
@@ -152,6 +160,15 @@ class GitHubNotificationBot:
         
         return True
     
+    def update_last_check_time(self):
+        """Update the last check time to current time"""
+        current_time = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        print(f"Updating last check time to: {current_time}")
+        # Note: This only updates for the current session
+        # For persistent storage, you'd need to write to a file or database
+        self.last_check_time = current_time
+        return current_time
+
     def run(self):
         """Main execution function"""
         print(f"Checking GitHub notifications...")
@@ -174,19 +191,23 @@ class GitHubNotificationBot:
                     seen_ids.add(notif_id)
             
             print(f"Unique notifications to send: {len(unique_notifications)}")
-            
-            # Send to Discord
+              # Send to Discord
             if unique_notifications:
                 success = self.send_to_discord(unique_notifications)
                 if success:
                     print("✅ Successfully processed all notifications")
+                    self.update_last_check_time()  # Update last check time after successful processing
                 else:
                     print("❌ Some notifications failed to send")
                     sys.exit(1)
             else:
                 print("No unique notifications to send")
+                # Even if no notifications to send, update the check time
+                self.update_last_check_time()
         else:
             print("No new notifications found")
+            # Update check time even if no notifications found
+            self.update_last_check_time()
 
 
 if __name__ == "__main__":
