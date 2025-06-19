@@ -136,7 +136,66 @@ class GitHubNotificationBot:
             print(f"CheckSuite URL from thread: {check_suite_url}")
             
             if not check_suite_url:
-                print("No CheckSuite URL found in thread data")
+                print("CheckSuite URL is None - trying alternative approach...")
+                
+                # Alternative approach: Try to find recent check suites for this repo
+                # and match by title/timing
+                repo_full_name = repository.get('full_name')
+                check_suites_url = f"https://api.github.com/repos/{repo_full_name}/check-suites"
+                
+                print(f"Step 2: Fetching recent check suites from: {check_suites_url}")
+                
+                # Get recent check suites
+                response = requests.get(check_suites_url, headers=self.headers, params={'per_page': 10})
+                print(f"Check Suites API Response Status: {response.status_code}")
+                
+                response.raise_for_status()
+                check_suites_data = response.json()
+                
+                print(f"Found {len(check_suites_data.get('check_suites', []))} recent check suites")
+                
+                # Try to match by title and timing
+                subject_title = subject.get('title', '')
+                notification_updated = notification.get('updated_at', '')
+                
+                print(f"Looking for check suite matching title: '{subject_title}'")
+                print(f"Notification updated at: {notification_updated}")
+                
+                for check_suite in check_suites_data.get('check_suites', []):
+                    suite_updated = check_suite.get('updated_at', '')
+                    suite_conclusion = check_suite.get('conclusion', '')
+                    suite_status = check_suite.get('status', '')
+                    
+                    print(f"Checking suite: updated={suite_updated}, status={suite_status}, conclusion={suite_conclusion}")
+                    
+                    # Match by timing (within reasonable window) and failed status
+                    if (suite_conclusion in ['failure', 'timed_out', 'cancelled'] or 
+                        suite_status == 'completed' or suite_status == 'in_progress'):
+                        
+                        # Check if the timing is close (within 10 minutes)
+                        try:
+                            from datetime import datetime
+                            notif_time = datetime.fromisoformat(notification_updated.replace('Z', '+00:00'))
+                            suite_time = datetime.fromisoformat(suite_updated.replace('Z', '+00:00'))
+                            time_diff = abs((notif_time - suite_time).total_seconds())
+                            
+                            print(f"Time difference: {time_diff} seconds")
+                            
+                            if time_diff <= 600:  # Within 10 minutes
+                                print(f"Found matching check suite by timing!")
+                                print("CheckSuite data from list:")
+                                pprint.pprint(check_suite, width=100, depth=2)
+                                
+                                print(f"CheckSuite HTML URL: {check_suite.get('html_url')}")
+                                print(f"CheckSuite Status: {check_suite.get('status')}")
+                                print(f"CheckSuite Conclusion: {check_suite.get('conclusion')}")
+                                
+                                return check_suite
+                        except Exception as e:
+                            print(f"Error parsing dates: {e}")
+                            continue
+                
+                print("No matching check suite found by timing")
                 return None
             
             print("Step 2: Fetching CheckSuite details...")
