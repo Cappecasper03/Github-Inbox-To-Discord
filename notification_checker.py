@@ -99,19 +99,38 @@ class GitHubNotificationBot:
             ]
         }
         
-        # Add URL if available
+        # Robust URL conversion and assignment
+        web_url = ""
+        
         if subject.get('url'):
-            # Convert API URL to web URL
             api_url = subject['url']
-            if 'pulls' in api_url:
+            
+            # Handle PullRequest type explicitly
+            if subject_type == 'PullRequest' and 'pulls' in api_url:
+                web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/pulls/', '/pull/')
+            # Handle Issue type explicitly
+            elif subject_type == 'Issue' and 'issues' in api_url:
+                web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/issues/', '/issue/')
+            # General conversion for other API URLs containing pulls or issues
+            elif 'pulls' in api_url:
                 web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/pulls/', '/pull/')
             elif 'issues' in api_url:
-                web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/issues/', '/issues/')
-            else:
-                web_url = repository.get('html_url', '')
-            
-            if web_url:
-                embed["url"] = web_url
+                web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/issues/', '/issue/')
+            # Handle other GitHub API patterns
+            elif 'api.github.com/repos' in api_url:
+                # For other API endpoints, try to convert to general repo format
+                web_url = api_url.replace('api.github.com/repos', 'github.com')
+                # Remove API-specific paths that don't translate to web URLs
+                if '/git/' in web_url or '/contents/' in web_url:
+                    web_url = ""
+        
+        # Fallback to repository URL if no specific subject URL could be converted
+        if not web_url and repository.get('html_url'):
+            web_url = repository['html_url']
+        
+        # Assign URL to embed only if we have a valid web URL
+        if web_url:
+            embed["url"] = web_url
         
         # Add author info if available
         if repository.get('owner'):
