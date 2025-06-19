@@ -63,17 +63,26 @@ class GitHubNotificationBot:
         """Format a GitHub notification for Discord embed"""
         subject = notification.get('subject', {})
         repository = notification.get('repository', {})
-        
-        # Determine notification type and color
+          # Determine notification type and color
         subject_type = subject.get('type', 'Unknown')
+        reason = notification.get('reason', '').lower()
+        
         colors = {
             'Issue': 0x28a745,      # Green
             'PullRequest': 0x0366d6, # Blue
             'Release': 0x6f42c1,     # Purple
             'Discussion': 0xffc107,  # Yellow
             'Commit': 0x6c757d,      # Gray
+            'WorkflowRun': 0xff6b35, # Orange
+            'CheckSuite': 0xff6b35,  # Orange
+            'CheckRun': 0xff6b35,    # Orange
         }
-        color = colors.get(subject_type, 0x586069)
+        
+        # Special handling for workflow-related notifications
+        if 'workflow' in reason or 'ci' in reason or 'check' in reason:
+            color = colors.get('WorkflowRun', 0xff6b35)
+        else:
+            color = colors.get(subject_type, 0x586069)
         
         # Create Discord embed
         embed = {
@@ -85,10 +94,9 @@ class GitHubNotificationBot:
                     "name": "Repository",
                     "value": repository.get('full_name', 'Unknown'),
                     "inline": True
-                },
-                {
+                },                {
                     "name": "Type",
-                    "value": subject_type,
+                    "value": self._format_notification_type(subject_type, notification),
                     "inline": True
                 },
                 {
@@ -98,17 +106,11 @@ class GitHubNotificationBot:
                 }
             ]
         }
-        
-        # Add URL if available
+          # Add URL if available
         if subject.get('url'):
             # Convert API URL to web URL
             api_url = subject['url']
-            if 'pulls' in api_url:
-                web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/pulls/', '/pull/')
-            elif 'issues' in api_url:
-                web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/issues/', '/issues/')
-            else:
-                web_url = repository.get('html_url', '')
+            web_url = self._convert_api_url_to_web_url(api_url, repository, notification)
             
             if web_url:
                 embed["url"] = web_url
@@ -179,6 +181,92 @@ class GitHubNotificationBot:
                 sys.exit(1)
         else:
             print("No new notifications found")
+    
+    def _convert_api_url_to_web_url(self, api_url: str, repository: Dict, notification: Dict) -> str:
+        """Convert GitHub API URL to web URL"""
+        if not api_url:
+            return repository.get('html_url', '')
+        
+        # Handle different types of GitHub URLs
+        if 'pulls' in api_url:
+            # Pull request: /repos/owner/repo/pulls/123 -> /owner/repo/pull/123
+            return api_url.replace('api.github.com/repos', 'github.com').replace('/pulls/', '/pull/')
+        
+        elif 'issues' in api_url:
+            # Issue: /repos/owner/repo/issues/123 -> /owner/repo/issues/123
+            return api_url.replace('api.github.com/repos', 'github.com').replace('/issues/', '/issues/')
+        
+        elif 'actions/runs' in api_url:
+            # GitHub Actions workflow run: /repos/owner/repo/actions/runs/123 -> /owner/repo/actions/runs/123
+            return api_url.replace('api.github.com/repos', 'github.com')
+        
+        elif 'releases' in api_url:
+            # Release: /repos/owner/repo/releases/123 -> /owner/repo/releases/tag/TAG_NAME
+            # We'll need to fetch the release info to get the tag name
+            try:
+                response = requests.get(api_url, headers=self.headers)
+                if response.status_code == 200:
+                    release_data = response.json()
+                    tag_name = release_data.get('tag_name', '')
+                    if tag_name:
+                        repo_full_name = repository.get('full_name', '')
+                        return f"https://github.com/{repo_full_name}/releases/tag/{tag_name}"
+            except Exception as e:
+                print(f"Error fetching release data: {e}")
+            
+            # Fallback to releases page
+            repo_full_name = repository.get('full_name', '')
+            return f"https://github.com/{repo_full_name}/releases"
+        
+        elif 'commits' in api_url:
+            # Commit: /repos/owner/repo/commits/sha -> /owner/repo/commit/sha
+            return api_url.replace('api.github.com/repos', 'github.com').replace('/commits/', '/commit/')
+        
+        elif 'discussions' in api_url:
+            # Discussion: /repos/owner/repo/discussions/123 -> /owner/repo/discussions/123
+            return api_url.replace('api.github.com/repos', 'github.com')
+        
+        else:
+            # For any other type, try to detect if it's a workflow-related notification
+            # by checking the notification reason or subject type
+            reason = notification.get('reason', '').lower()
+            subject_type = notification.get('subject', {}).get('type', '').lower()
+            
+            if 'workflow' in reason or 'action' in reason or 'ci' in reason:
+                # This might be a workflow notification, try to construct actions URL
+                repo_full_name = repository.get('full_name', '')
+                if repo_full_name:
+                    return f"https://github.com/{repo_full_name}/actions"
+            
+            # Default fallback to repository URL
+            return repository.get('html_url', '')
+
+    def _format_notification_type(self, subject_type: str, notification: Dict) -> str:
+        """Format the notification type for display"""
+        reason = notification.get('reason', '').lower()
+        
+        # Map common notification types to more readable names
+        type_mapping = {
+            'PullRequest': 'Pull Request',
+            'Issue': 'Issue',
+            'Release': 'Release',
+            'Discussion': 'Discussion',
+            'Commit': 'Commit',
+            'WorkflowRun': 'Workflow Run',
+            'CheckSuite': 'Check Suite',
+            'CheckRun': 'Check Run'
+        }
+        
+        # Check if this is a workflow-related notification
+        if 'workflow' in reason or 'ci' in reason or 'check' in reason:
+            if subject_type == 'CheckSuite':
+                return type_mapping.get('CheckSuite', 'Workflow')
+            elif subject_type == 'CheckRun':
+                return type_mapping.get('CheckRun', 'Workflow')
+            else:
+                return 'Workflow'
+        
+        return type_mapping.get(subject_type, subject_type)
 
 
 if __name__ == "__main__":
