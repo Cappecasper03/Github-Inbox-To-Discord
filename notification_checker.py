@@ -12,7 +12,6 @@ import requests
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import hashlib
-import re
 
 
 class GitHubNotificationBot:
@@ -65,37 +64,16 @@ class GitHubNotificationBot:
         subject = notification.get('subject', {})
         repository = notification.get('repository', {})
         
-        # Debug output for GitHub Actions notifications
-        if self._is_github_actions_notification(notification):
-            print(f"DEBUG: GitHub Actions notification detected:")
-            print(f"  Subject Type: {subject.get('type', 'Unknown')}")
-            print(f"  Subject Title: {subject.get('title', 'No title')}")
-            print(f"  Subject URL: {subject.get('url', 'No URL')}")
-            print(f"  Reason: {notification.get('reason', 'Unknown')}")
-            print(f"  Repository: {repository.get('full_name', 'Unknown')}")
-        
         # Determine notification type and color
         subject_type = subject.get('type', 'Unknown')
-        reason = notification.get('reason', '').lower()
-        
         colors = {
             'Issue': 0x28a745,      # Green
             'PullRequest': 0x0366d6, # Blue
             'Release': 0x6f42c1,     # Purple
             'Discussion': 0xffc107,  # Yellow
             'Commit': 0x6c757d,      # Gray
-            'WorkflowRun': 0xff6b35, # Orange
-            'CheckSuite': 0xff6b35,  # Orange
-            'CheckRun': 0xff6b35,    # Orange
         }
-        
-        # Special handling for workflow-related notifications
-        if self._is_github_actions_notification(notification):
-            color = colors.get('WorkflowRun', 0xff6b35)
-        elif 'workflow' in reason or 'ci' in reason or 'check' in reason:
-            color = colors.get('WorkflowRun', 0xff6b35)
-        else:
-            color = colors.get(subject_type, 0x586069)
+        color = colors.get(subject_type, 0x586069)
         
         # Create Discord embed
         embed = {
@@ -110,7 +88,7 @@ class GitHubNotificationBot:
                 },
                 {
                     "name": "Type",
-                    "value": self._format_notification_type(subject_type, notification),
+                    "value": subject_type,
                     "inline": True
                 },
                 {
@@ -121,18 +99,19 @@ class GitHubNotificationBot:
             ]
         }
         
-        # Always try to get a URL - either from subject or construct one for GitHub Actions
-        web_url = None
+        # Add URL if available
         if subject.get('url'):
             # Convert API URL to web URL
             api_url = subject['url']
-            web_url = self._convert_api_url_to_web_url(api_url, repository, notification)
-        elif self._is_github_actions_notification(notification):
-            # GitHub Actions notifications often don't have URLs, so construct one
-            web_url = self._get_github_actions_url(notification, repository)
-        
-        if web_url:
-            embed["url"] = web_url
+            if 'pulls' in api_url:
+                web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/pulls/', '/pull/')
+            elif 'issues' in api_url:
+                web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/issues/', '/issues/')
+            else:
+                web_url = repository.get('html_url', '')
+            
+            if web_url:
+                embed["url"] = web_url
         
         # Add author info if available
         if repository.get('owner'):
@@ -200,342 +179,6 @@ class GitHubNotificationBot:
                 sys.exit(1)
         else:
             print("No new notifications found")
-    
-    def _convert_api_url_to_web_url(self, api_url: str, repository: Dict, notification: Dict) -> str:
-        """Convert GitHub API URL to web URL"""
-        repo_full_name = repository.get('full_name', '')
-        reason = notification.get('reason', '').lower()
-        subject_type = notification.get('subject', {}).get('type', '').lower()
-        
-        # Handle GitHub Actions notifications specially since they often don't have URLs
-        if self._is_github_actions_notification(notification):
-            return self._get_github_actions_url(notification, repository)
-        
-        if not api_url:
-            return repository.get('html_url', '')
-        
-        # Handle different types of GitHub URLs
-        if 'pulls' in api_url:
-            # Pull request: /repos/owner/repo/pulls/123 -> /owner/repo/pull/123
-            return api_url.replace('api.github.com/repos', 'github.com').replace('/pulls/', '/pull/')
-        
-        elif 'issues' in api_url:
-            # Issue: /repos/owner/repo/issues/123 -> /owner/repo/issues/123
-            return api_url.replace('api.github.com/repos', 'github.com').replace('/issues/', '/issues/')
-        
-        elif 'actions/runs' in api_url:
-            # GitHub Actions workflow run: /repos/owner/repo/actions/runs/123 -> /owner/repo/actions/runs/123
-            return api_url.replace('api.github.com/repos', 'github.com')
-        
-        elif 'check-runs' in api_url:
-            # GitHub Check Run: try to get the workflow run from the check run
-            try:
-                response = requests.get(api_url, headers=self.headers)
-                if response.status_code == 200:
-                    check_run_data = response.json()
-                    # Check if this check run has an associated workflow run
-                    check_suite_url = check_run_data.get('check_suite', {}).get('url', '')
-                    if check_suite_url:
-                        # Get the check suite to find the workflow run
-                        suite_response = requests.get(check_suite_url, headers=self.headers)
-                        if suite_response.status_code == 200:
-                            suite_data = suite_response.json()
-                            run_id = suite_data.get('id')
-                            if run_id and repo_full_name:
-                                return f"https://github.com/{repo_full_name}/actions/runs/{run_id}"
-            except Exception as e:
-                print(f"Error fetching check run data: {e}")
-            
-            # Fallback to actions page
-            if repo_full_name:
-                return f"https://github.com/{repo_full_name}/actions"
-        
-        elif 'check-suites' in api_url:
-            # GitHub Check Suite: try to get the workflow run ID
-            try:
-                response = requests.get(api_url, headers=self.headers)
-                if response.status_code == 200:
-                    check_suite_data = response.json()
-                    run_id = check_suite_data.get('id')
-                    if run_id and repo_full_name:
-                        return f"https://github.com/{repo_full_name}/actions/runs/{run_id}"
-            except Exception as e:
-                print(f"Error fetching check suite data: {e}")
-            
-            # Fallback to actions page
-            if repo_full_name:
-                return f"https://github.com/{repo_full_name}/actions"
-        
-        elif 'releases' in api_url:
-            # Release: /repos/owner/repo/releases/123 -> /owner/repo/releases/tag/TAG_NAME
-            # We'll need to fetch the release info to get the tag name
-            try:
-                response = requests.get(api_url, headers=self.headers)
-                if response.status_code == 200:
-                    release_data = response.json()
-                    tag_name = release_data.get('tag_name', '')
-                    if tag_name:
-                        return f"https://github.com/{repo_full_name}/releases/tag/{tag_name}"
-            except Exception as e:
-                print(f"Error fetching release data: {e}")
-            
-            # Fallback to releases page
-            return f"https://github.com/{repo_full_name}/releases"
-        
-        elif 'commits' in api_url:
-            # Commit: /repos/owner/repo/commits/sha -> /owner/repo/commit/sha
-            return api_url.replace('api.github.com/repos', 'github.com').replace('/commits/', '/commit/')
-        
-        elif 'discussions' in api_url:
-            # Discussion: /repos/owner/repo/discussions/123 -> /owner/repo/discussions/123
-            return api_url.replace('api.github.com/repos', 'github.com')
-        
-        else:
-            # Default fallback to repository URL
-            return repository.get('html_url', '')
-    
-    def _is_github_actions_notification(self, notification: Dict) -> bool:
-        """Check if this is a GitHub Actions related notification"""
-        reason = notification.get('reason', '').lower()
-        subject_type = notification.get('subject', {}).get('type', '').lower()
-        subject_title = notification.get('subject', {}).get('title', '').lower()
-        
-        # Check various indicators of GitHub Actions notifications
-        actions_indicators = [
-            'workflow' in reason,
-            'ci' in reason,
-            'check' in reason,
-            subject_type in ['checksuite', 'checkrun', 'workflowrun'],
-            'workflow' in subject_title,
-            'build' in subject_title and ('failed' in subject_title or 'passed' in subject_title or 'success' in subject_title),
-            'ci' in subject_title,
-            'test' in subject_title and ('failed' in subject_title or 'passed' in subject_title),        ]
-        
-        return any(actions_indicators)
-
-    def _get_github_actions_url(self, notification: Dict, repository: Dict) -> str:
-        """Get the appropriate GitHub Actions URL for a notification"""
-        repo_full_name = repository.get('full_name', '')
-        if not repo_full_name:
-            return repository.get('html_url', '')
-
-        subject = notification.get('subject', {})
-        api_url = subject.get('url', '')
-        
-        print(f"DEBUG: GitHub Actions notification - API URL: {api_url}")
-        print(f"DEBUG: Subject: {subject}")
-        print(f"DEBUG: Notification reason: {notification.get('reason')}")
-        
-        # Method 1: If we have a direct actions/runs URL
-        if api_url and 'actions/runs' in api_url:
-            try:
-                run_id = api_url.split('/runs/')[-1].split('?')[0]
-                if run_id.isdigit():
-                    print(f"DEBUG: Found direct run ID: {run_id}")
-                    return f"https://github.com/{repo_full_name}/actions/runs/{run_id}"
-            except:
-                pass
-        
-        # Method 2: Try to get workflow run from check suite or check run
-        if api_url:
-            try:
-                response = requests.get(api_url, headers=self.headers)
-                if response.status_code == 200:
-                    data = response.json()
-                    print(f"DEBUG: API response keys: {list(data.keys())}")
-                    
-                    # If it's a check suite, look for associated workflow runs
-                    if 'check-suites' in api_url:
-                        head_sha = data.get('head_sha')
-                        head_branch = data.get('head_branch')
-                        
-                        # Try to find workflow runs for this commit
-                        if head_sha:
-                            runs_url = f"https://api.github.com/repos/{repo_full_name}/actions/runs"
-                            runs_response = requests.get(runs_url, headers=self.headers, params={
-                                'head_sha': head_sha,
-                                'per_page': 10
-                            })
-                            
-                            if runs_response.status_code == 200:
-                                runs_data = runs_response.json()
-                                workflow_runs = runs_data.get('workflow_runs', [])
-                                
-                                if workflow_runs:
-                                    # Get the most recent workflow run
-                                    latest_run = workflow_runs[0]
-                                    run_id = latest_run.get('id')
-                                    if run_id:
-                                        print(f"DEBUG: Found workflow run ID from check suite: {run_id}")
-                                        return f"https://github.com/{repo_full_name}/actions/runs/{run_id}"
-                    
-                    # If it's a check run, try to get the associated workflow run
-                    elif 'check-runs' in api_url:
-                        # Check runs often have details_url that points to the workflow
-                        details_url = data.get('details_url', '')
-                        if details_url and 'actions/runs' in details_url:
-                            print(f"DEBUG: Found details_url: {details_url}")
-                            return details_url
-                        
-                        # Try via check suite
-                        check_suite_url = data.get('check_suite', {}).get('url', '')
-                        if check_suite_url:
-                            print(f"DEBUG: Getting check suite: {check_suite_url}")
-                            suite_response = requests.get(check_suite_url, headers=self.headers)
-                            if suite_response.status_code == 200:
-                                suite_data = suite_response.json()
-                                head_sha = suite_data.get('head_sha')
-                                
-                                if head_sha:
-                                    runs_url = f"https://api.github.com/repos/{repo_full_name}/actions/runs"
-                                    runs_response = requests.get(runs_url, headers=self.headers, params={
-                                        'head_sha': head_sha,
-                                        'per_page': 10
-                                    })
-                                    
-                                    if runs_response.status_code == 200:
-                                        runs_data = runs_response.json()
-                                        workflow_runs = runs_data.get('workflow_runs', [])
-                                        
-                                        if workflow_runs:
-                                            latest_run = workflow_runs[0]
-                                            run_id = latest_run.get('id')
-                                            if run_id:
-                                                print(f"DEBUG: Found workflow run ID from check run: {run_id}")
-                                                return f"https://github.com/{repo_full_name}/actions/runs/{run_id}"
-                                                
-            except Exception as e:
-                print(f"Error trying to get workflow run ID: {e}")
-          # Method 3: For pull request related workflows, try to find via PR
-        if notification.get('reason') == 'ci' or 'pull_request' in str(notification).lower():
-            pr_workflow_url = self._get_pull_request_workflow_url(notification, repository)
-            if pr_workflow_url != f"https://github.com/{repo_full_name}/actions":
-                return pr_workflow_url
-        
-        # Method 4: General workflow run search as fallback
-        try:
-            # This is a heuristic approach - look for recent workflow runs
-            runs_url = f"https://api.github.com/repos/{repo_full_name}/actions/runs"
-            runs_response = requests.get(runs_url, headers=self.headers, params={'per_page': 20})
-            
-            if runs_response.status_code == 200:
-                runs_data = runs_response.json()
-                workflow_runs = runs_data.get('workflow_runs', [])
-                
-                # Look for a recent run that might be related
-                for run in workflow_runs:
-                    if run.get('event') in ['pull_request', 'push']:
-                        run_id = run.get('id')
-                        if run_id:
-                            print(f"DEBUG: Found recent workflow run: {run_id}")
-                            return f"https://github.com/{repo_full_name}/actions/runs/{run_id}"
-        except Exception as e:
-            print(f"Error searching for recent workflow runs: {e}")
-        
-        # Fallback: Return the general actions page for the repository
-        print(f"DEBUG: Falling back to general actions page")
-        return f"https://github.com/{repo_full_name}/actions"
-    
-    def _get_pull_request_workflow_url(self, notification: Dict, repository: Dict) -> str:
-        """Try to get workflow URL for pull request related notifications"""
-        repo_full_name = repository.get('full_name', '')
-        if not repo_full_name:
-            return f"https://github.com/{repo_full_name}/actions"
-        
-        # Look for pull request information in the notification
-        subject_title = notification.get('subject', {}).get('title', '')
-        
-        # Try to extract PR number from title if it's in format "Title (#123)"
-        pr_match = re.search(r'#(\d+)', subject_title)
-        if pr_match:
-            pr_number = pr_match.group(1)
-            
-            try:
-                # Get PR information
-                pr_url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}"
-                pr_response = requests.get(pr_url, headers=self.headers)
-                
-                if pr_response.status_code == 200:
-                    pr_data = pr_response.json()
-                    head_sha = pr_data.get('head', {}).get('sha')
-                    
-                    if head_sha:
-                        # Get workflow runs for this commit
-                        runs_url = f"https://api.github.com/repos/{repo_full_name}/actions/runs"
-                        runs_response = requests.get(runs_url, headers=self.headers, params={
-                            'head_sha': head_sha,
-                            'per_page': 10
-                        })
-                        
-                        if runs_response.status_code == 200:
-                            runs_data = runs_response.json()
-                            workflow_runs = runs_data.get('workflow_runs', [])
-                            
-                            # Find the most relevant workflow run (usually the most recent for PR)
-                            for run in workflow_runs:
-                                if run.get('event') == 'pull_request':
-                                    run_id = run.get('id')
-                                    if run_id:
-                                        print(f"DEBUG: Found PR workflow run: {run_id}")
-                                        return f"https://github.com/{repo_full_name}/actions/runs/{run_id}"
-                            
-                            # If no PR-specific run, take the most recent one
-                            if workflow_runs:
-                                run_id = workflow_runs[0].get('id')
-                                if run_id:
-                                    print(f"DEBUG: Found recent workflow run for PR: {run_id}")
-                                    return f"https://github.com/{repo_full_name}/actions/runs/{run_id}"
-            
-            except Exception as e:
-                print(f"Error getting PR workflow URL: {e}")
-        
-        return f"https://github.com/{repo_full_name}/actions"
-
-    def _format_notification_type(self, subject_type: str, notification: Dict) -> str:
-        """Format the notification type for display"""
-        reason = notification.get('reason', '').lower()
-        subject_title = notification.get('subject', {}).get('title', '').lower()
-        
-        # Map common notification types to more readable names
-        type_mapping = {
-            'PullRequest': 'Pull Request',
-            'Issue': 'Issue',
-            'Release': 'Release',
-            'Discussion': 'Discussion',
-            'Commit': 'Commit',
-            'WorkflowRun': 'Workflow Run',
-            'CheckSuite': 'Check Suite',
-            'CheckRun': 'Check Run'
-        }
-        
-        # Enhanced GitHub Actions detection and formatting
-        if self._is_github_actions_notification(notification):
-            # Try to be more specific about the workflow status
-            if 'failed' in subject_title or 'failure' in subject_title:
-                return 'Workflow Failed ❌'
-            elif 'passed' in subject_title or 'success' in subject_title:
-                return 'Workflow Passed ✅'
-            elif 'cancelled' in subject_title or 'canceled' in subject_title:
-                return 'Workflow Cancelled ⏹️'
-            elif 'in_progress' in subject_title or 'running' in subject_title:
-                return 'Workflow Running 🔄'
-            elif subject_type == 'CheckSuite':
-                return 'Check Suite'
-            elif subject_type == 'CheckRun':
-                return 'Check Run'
-            else:
-                return 'Workflow'
-        
-        # Check if this is a workflow-related notification (legacy detection)
-        if 'workflow' in reason or 'ci' in reason or 'check' in reason:
-            if subject_type == 'CheckSuite':
-                return type_mapping.get('CheckSuite', 'Workflow')
-            elif subject_type == 'CheckRun':
-                return type_mapping.get('CheckRun', 'Workflow')
-            else:
-                return 'Workflow'
-        
-        return type_mapping.get(subject_type, subject_type)
 
 
 if __name__ == "__main__":
