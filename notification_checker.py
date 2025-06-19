@@ -96,37 +96,74 @@ class GitHubNotificationBot:
     
     def get_check_suite_details(self, notification: Dict) -> Optional[Dict]:
         """Get CheckSuite details for GitHub Actions notifications"""
+        print("\n--- FETCHING GITHUB ACTIONS DETAILS ---")
+        
         subject = notification.get('subject', {})
         repository = notification.get('repository', {})
         
+        print(f"Subject type: {subject.get('type')}")
+        print(f"Repository: {repository.get('full_name')}")
+        
         if subject.get('type') != 'CheckSuite' or not repository.get('full_name'):
+            print("Not a CheckSuite notification or missing repository - skipping GitHub Actions lookup")
             return None
         
         # Extract check suite ID from the notification thread URL
         thread_url = notification.get('url', '')
+        print(f"Thread URL: {thread_url}")
+        
         if not thread_url:
+            print("No thread URL found - cannot fetch CheckSuite details")
             return None
         
         try:
+            print("Step 1: Fetching notification thread details...")
+            print(f"Making request to: {thread_url}")
+            
             # Get the thread details to find the CheckSuite API URL
             response = requests.get(thread_url, headers=self.headers)
+            print(f"Thread API Response Status: {response.status_code}")
+            print(f"Thread API Response Headers: {dict(response.headers)}")
+            
             response.raise_for_status()
             thread_data = response.json()
             
+            print("Thread data received:")
+            pprint.pprint(thread_data, width=100, depth=2)
+            
             # Look for CheckSuite URL in the thread subject
             check_suite_url = thread_data.get('subject', {}).get('url')
+            print(f"CheckSuite URL from thread: {check_suite_url}")
+            
             if not check_suite_url:
+                print("No CheckSuite URL found in thread data")
                 return None
+            
+            print("Step 2: Fetching CheckSuite details...")
+            print(f"Making request to: {check_suite_url}")
             
             # Fetch CheckSuite details
             response = requests.get(check_suite_url, headers=self.headers)
+            print(f"CheckSuite API Response Status: {response.status_code}")
+            print(f"CheckSuite API Response Headers: {dict(response.headers)}")
+            
             response.raise_for_status()
             check_suite_data = response.json()
+            
+            print("CheckSuite data received:")
+            pprint.pprint(check_suite_data, width=100, depth=2)
+            
+            print(f"CheckSuite HTML URL: {check_suite_data.get('html_url')}")
+            print(f"CheckSuite Status: {check_suite_data.get('status')}")
+            print(f"CheckSuite Conclusion: {check_suite_data.get('conclusion')}")
             
             return check_suite_data
             
         except requests.exceptions.RequestException as e:
-            print(f"Failed to fetch CheckSuite details: {e}")
+            print(f"FAILED to fetch CheckSuite details: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"Error response status: {e.response.status_code}")
+                print(f"Error response body: {e.response.text}")
             return None
 
     def format_notification_for_discord(self, notification: Dict) -> Dict:
@@ -169,11 +206,13 @@ class GitHubNotificationBot:
                 }
             ]
         }
-        
-        # Handle URL generation based on notification type
+          # Handle URL generation based on notification type
         web_url = None
         
+        print(f"Processing notification type: {subject_type}")
+        
         if subject.get('url'):
+            print(f"Standard notification with URL: {subject.get('url')}")
             # Convert API URL to web URL for standard notifications
             api_url = subject['url']
             if 'pulls' in api_url:
@@ -182,46 +221,67 @@ class GitHubNotificationBot:
                 web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/issues/', '/issues/')
             else:
                 web_url = repository.get('html_url', '')
+            print(f"Converted to web URL: {web_url}")
         elif subject_type == 'CheckSuite':
+            print("CheckSuite notification detected - fetching GitHub Actions details...")
             # Handle GitHub Actions CheckSuite notifications
             check_suite_details = self.get_check_suite_details(notification)
             if check_suite_details:
+                print("CheckSuite details retrieved successfully")
                 # Get the HTML URL from CheckSuite details
                 web_url = check_suite_details.get('html_url')
+                print(f"GitHub Actions URL: {web_url}")
                 
                 # Update color based on CheckSuite status
                 status = check_suite_details.get('status')
                 conclusion = check_suite_details.get('conclusion')
                 
+                print(f"Updating embed color based on status: {status}, conclusion: {conclusion}")
+                
                 if status == 'completed':
                     if conclusion == 'success':
                         embed['color'] = 0x28a745  # Green for success
+                        print("Set color to GREEN (success)")
                     elif conclusion in ['failure', 'timed_out', 'action_required']:
                         embed['color'] = 0xdc3545  # Red for failure
+                        print("Set color to RED (failure)")
                     elif conclusion == 'cancelled':
                         embed['color'] = 0x6c757d  # Gray for cancelled
+                        print("Set color to GRAY (cancelled)")
                     else:
                         embed['color'] = 0xffc107  # Yellow for other completed states
+                        print("Set color to YELLOW (other completed)")
                 else:
                     embed['color'] = 0x0366d6  # Blue for in progress
+                    print("Set color to BLUE (in progress)")
                 
                 # Add additional fields for CheckSuite
                 if conclusion:
-                    embed['fields'].append({
+                    status_field = {
                         "name": "Status",
                         "value": f"{status.title()} ({conclusion.replace('_', ' ').title()})",
                         "inline": True
-                    })
+                    }
+                    embed['fields'].append(status_field)
+                    print(f"Added status field: {status_field}")
                 elif status:
-                    embed['fields'].append({
+                    status_field = {
                         "name": "Status", 
                         "value": status.title(),
                         "inline": True
-                    })
-        
-        # Add URL to embed if we found one
+                    }
+                    embed['fields'].append(status_field)
+                    print(f"Added status field: {status_field}")
+            else:
+                print("Failed to retrieve CheckSuite details")
+        else:
+            print(f"No URL handling for notification type: {subject_type}")
+          # Add URL to embed if we found one
         if web_url:
             embed["url"] = web_url
+            print(f"Final embed URL set to: {web_url}")
+        else:
+            print("No URL to add to embed")
         
         # Add author info if available
         if repository.get('owner'):
