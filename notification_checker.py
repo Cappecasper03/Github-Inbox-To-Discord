@@ -63,8 +63,7 @@ class GitHubNotificationBot:
         """Format a GitHub notification for Discord embed"""
         subject = notification.get('subject', {})
         repository = notification.get('repository', {})
-        
-        # Determine notification type and color
+          # Determine notification type and color
         subject_type = subject.get('type', 'Unknown')
         colors = {
             'Issue': 0x28a745,      # Green
@@ -72,6 +71,7 @@ class GitHubNotificationBot:
             'Release': 0x6f42c1,     # Purple
             'Discussion': 0xffc107,  # Yellow
             'Commit': 0x6c757d,      # Gray
+            'CheckSuite': 0xff6b35,  # Orange for CI/Actions
         }
         color = colors.get(subject_type, 0x586069)
         
@@ -97,13 +97,12 @@ class GitHubNotificationBot:
                     "inline": True
                 }
             ]
-        }
-        
-        # Robust URL conversion and assignment
+        }        # Robust URL conversion and assignment
         web_url = ""
         
         if subject.get('url'):
             api_url = subject['url']
+            print(f"Debug: Processing {subject_type} with API URL: {api_url}")
             
             # Handle PullRequest type explicitly
             if subject_type == 'PullRequest' and 'pulls' in api_url:
@@ -111,6 +110,10 @@ class GitHubNotificationBot:
             # Handle Issue type explicitly
             elif subject_type == 'Issue' and 'issues' in api_url:
                 web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/issues/', '/issue/')
+            # Handle CheckSuite (GitHub Actions) - need to get PR info from API
+            elif subject_type == 'CheckSuite':
+                # For CheckSuite notifications, we need to fetch the check suite details to get PR info
+                web_url = self._get_pr_url_from_check_suite(api_url, repository.get('html_url', ''))
             # General conversion for other API URLs containing pulls or issues
             elif 'pulls' in api_url:
                 web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/pulls/', '/pull/')
@@ -123,10 +126,13 @@ class GitHubNotificationBot:
                 # Remove API-specific paths that don't translate to web URLs
                 if '/git/' in web_url or '/contents/' in web_url:
                     web_url = ""
+            
+            print(f"Debug: Converted to web URL: {web_url}")
         
         # Fallback to repository URL if no specific subject URL could be converted
         if not web_url and repository.get('html_url'):
             web_url = repository['html_url']
+            print(f"Debug: Using fallback repository URL: {web_url}")
         
         # Assign URL to embed only if we have a valid web URL
         if web_url:
@@ -137,10 +143,48 @@ class GitHubNotificationBot:
             embed["author"] = {
                 "name": repository['owner']['login'],
                 "icon_url": repository['owner'].get('avatar_url', ''),
-                "url": repository['owner'].get('html_url', '')
-            }
+                "url": repository['owner'].get('html_url', '')            }
         
         return embed
+    
+    def _get_pr_url_from_check_suite(self, check_suite_url: str, repo_html_url: str) -> str:
+        """Get PR URL from CheckSuite API URL by fetching check suite details"""
+        print(f"Debug: Fetching check suite details from: {check_suite_url}")
+        try:
+            response = requests.get(check_suite_url, headers=self.headers)
+            response.raise_for_status()
+            check_suite_data = response.json()
+            
+            # Check if this check suite is associated with pull requests
+            pull_requests = check_suite_data.get('pull_requests', [])
+            print(f"Debug: Found {len(pull_requests)} pull requests in check suite")
+            if pull_requests:
+                # Use the first PR (most common case is one PR per check suite)
+                pr_number = pull_requests[0].get('number')
+                print(f"Debug: PR number: {pr_number}")
+                if pr_number:
+                    # Extract owner/repo from the repo_html_url
+                    if repo_html_url and 'github.com' in repo_html_url:
+                        pr_url = f"{repo_html_url}/pull/{pr_number}"
+                        print(f"Debug: Generated PR URL: {pr_url}")
+                        return pr_url
+            
+            # If no PR found, check the head_branch and see if we can infer a PR
+            head_branch = check_suite_data.get('head_branch')
+            print(f"Debug: Head branch: {head_branch}")
+            if head_branch and head_branch != 'main' and head_branch != 'master':
+                # This might be a PR branch, but we'd need another API call to find the PR
+                # For now, fall back to the repo URL
+                pass
+                
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching check suite details: {e}")
+        except (KeyError, IndexError, TypeError) as e:
+            print(f"Error parsing check suite data: {e}")
+        
+        # Fallback to repository URL
+        print(f"Debug: Falling back to repository URL: {repo_html_url}")
+        return repo_html_url
     
     def send_to_discord(self, notifications: List[Dict]) -> bool:
         """Send notifications to Discord"""
