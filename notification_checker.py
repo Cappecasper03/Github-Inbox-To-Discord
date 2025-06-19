@@ -94,9 +94,9 @@ class GitHubNotificationBot:
                 print(f"Error response body: {e.response.text}")
             return []
     
-    def get_check_suite_details(self, notification: Dict) -> Optional[Dict]:
-        """Get CheckSuite details for GitHub Actions notifications"""
-        print("\n--- FETCHING GITHUB ACTIONS DETAILS ---")
+    def get_github_actions_url(self, notification: Dict) -> Optional[str]:
+        """Get the actual GitHub Actions URL from a CheckSuite notification"""
+        print("\n--- FETCHING GITHUB ACTIONS URL ---")
         
         subject = notification.get('subject', {})
         repository = notification.get('repository', {})
@@ -105,121 +105,126 @@ class GitHubNotificationBot:
         print(f"Repository: {repository.get('full_name')}")
         
         if subject.get('type') != 'CheckSuite' or not repository.get('full_name'):
-            print("Not a CheckSuite notification or missing repository - skipping GitHub Actions lookup")
+            print("Not a CheckSuite notification - skipping GitHub Actions URL lookup")
             return None
         
-        # Extract check suite ID from the notification thread URL
         thread_url = notification.get('url', '')
         print(f"Thread URL: {thread_url}")
         
         if not thread_url:
-            print("No thread URL found - cannot fetch CheckSuite details")
+            print("No thread URL found")
             return None
         
         try:
-            print("Step 1: Fetching notification thread details...")
-            print(f"Making request to: {thread_url}")
+            print("Fetching notification thread to find target URL...")
             
-            # Get the thread details to find the CheckSuite API URL
+            # The key insight: we need to check the 'latest_comment_url' or construct the URL
+            # from the notification data. For CheckSuite notifications, we can often construct
+            # the GitHub Actions URL from the repository and notification metadata.
+            
+            # First, try to get additional details from the thread
             response = requests.get(thread_url, headers=self.headers)
             print(f"Thread API Response Status: {response.status_code}")
-            print(f"Thread API Response Headers: {dict(response.headers)}")
             
             response.raise_for_status()
             thread_data = response.json()
             
-            print("Thread data received:")
-            pprint.pprint(thread_data, width=100, depth=2)
+            # Look for the target URL in various places
+            target_url = None
             
-            # Look for CheckSuite URL in the thread subject
-            check_suite_url = thread_data.get('subject', {}).get('url')
-            print(f"CheckSuite URL from thread: {check_suite_url}")
+            # Check if there's a latest_comment_url that might lead us to the right place
+            latest_comment_url = thread_data.get('subject', {}).get('latest_comment_url')
+            print(f"Latest comment URL: {latest_comment_url}")
             
-            if not check_suite_url:
-                print("CheckSuite URL is None - trying alternative approach...")
+            # For CheckSuite notifications, try to construct the Actions URL
+            # GitHub Actions URLs typically follow the pattern:
+            # https://github.com/{owner}/{repo}/actions/runs/{run_id}
+            
+            # We can try to find recent workflow runs for this repo
+            repo_full_name = repository.get('full_name')
+            workflow_runs_url = f"https://api.github.com/repos/{repo_full_name}/actions/runs"
+            
+            print(f"Fetching recent workflow runs from: {workflow_runs_url}")
+            
+            response = requests.get(workflow_runs_url, headers=self.headers, params={
+                'per_page': 20,
+                'status': 'completed'  # Focus on completed runs which are more likely to match notifications
+            })
+            print(f"Workflow runs API Response Status: {response.status_code}")
+            
+            if response.status_code == 200:
+                runs_data = response.json()
+                workflow_runs = runs_data.get('workflow_runs', [])
                 
-                # Alternative approach: Try to find recent check suites for this repo
-                # and match by title/timing
-                repo_full_name = repository.get('full_name')
-                check_suites_url = f"https://api.github.com/repos/{repo_full_name}/check-suites"
+                print(f"Found {len(workflow_runs)} recent workflow runs")
                 
-                print(f"Step 2: Fetching recent check suites from: {check_suites_url}")
-                
-                # Get recent check suites
-                response = requests.get(check_suites_url, headers=self.headers, params={'per_page': 10})
-                print(f"Check Suites API Response Status: {response.status_code}")
-                
-                response.raise_for_status()
-                check_suites_data = response.json()
-                
-                print(f"Found {len(check_suites_data.get('check_suites', []))} recent check suites")
-                
-                # Try to match by title and timing
-                subject_title = subject.get('title', '')
+                # Try to match by timing and title
+                subject_title = subject.get('title', '').lower()
                 notification_updated = notification.get('updated_at', '')
                 
-                print(f"Looking for check suite matching title: '{subject_title}'")
-                print(f"Notification updated at: {notification_updated}")
+                print(f"Looking for workflow run matching notification:")
+                print(f"  Title contains: {subject_title}")
+                print(f"  Updated around: {notification_updated}")
                 
-                for check_suite in check_suites_data.get('check_suites', []):
-                    suite_updated = check_suite.get('updated_at', '')
-                    suite_conclusion = check_suite.get('conclusion', '')
-                    suite_status = check_suite.get('status', '')
+                for run in workflow_runs:
+                    run_updated = run.get('updated_at', '')
+                    run_conclusion = run.get('conclusion', '')
+                    run_name = run.get('name', '').lower()
+                    run_display_title = run.get('display_title', '').lower()
                     
-                    print(f"Checking suite: updated={suite_updated}, status={suite_status}, conclusion={suite_conclusion}")
+                    print(f"Checking run: {run.get('html_url')}")
+                    print(f"  Name: {run_name}")
+                    print(f"  Display title: {run_display_title}")
+                    print(f"  Conclusion: {run_conclusion}")
+                    print(f"  Updated: {run_updated}")
                     
-                    # Match by timing (within reasonable window) and failed status
-                    if (suite_conclusion in ['failure', 'timed_out', 'cancelled'] or 
-                        suite_status == 'completed' or suite_status == 'in_progress'):
+                    # Try to match by title keywords and timing
+                    title_matches = False
+                    if 'workflow run failed' in subject_title:
+                        # Extract the workflow name from the title
+                        # "Windows workflow run failed for slang branch" -> look for "windows"
+                        title_parts = subject_title.replace('workflow run failed', '').strip().split()
+                        for part in title_parts:
+                            if part in run_name or part in run_display_title:
+                                title_matches = True
+                                print(f"  Title match found: '{part}' in run name/title")
+                                break
+                    
+                    # Check timing (within 15 minutes)
+                    timing_matches = False
+                    try:
+                        from datetime import datetime
+                        notif_time = datetime.fromisoformat(notification_updated.replace('Z', '+00:00'))
+                        run_time = datetime.fromisoformat(run_updated.replace('Z', '+00:00'))
+                        time_diff = abs((notif_time - run_time).total_seconds())
                         
-                        # Check if the timing is close (within 10 minutes)
-                        try:
-                            from datetime import datetime
-                            notif_time = datetime.fromisoformat(notification_updated.replace('Z', '+00:00'))
-                            suite_time = datetime.fromisoformat(suite_updated.replace('Z', '+00:00'))
-                            time_diff = abs((notif_time - suite_time).total_seconds())
-                            
-                            print(f"Time difference: {time_diff} seconds")
-                            
-                            if time_diff <= 600:  # Within 10 minutes
-                                print(f"Found matching check suite by timing!")
-                                print("CheckSuite data from list:")
-                                pprint.pprint(check_suite, width=100, depth=2)
-                                
-                                print(f"CheckSuite HTML URL: {check_suite.get('html_url')}")
-                                print(f"CheckSuite Status: {check_suite.get('status')}")
-                                print(f"CheckSuite Conclusion: {check_suite.get('conclusion')}")
-                                
-                                return check_suite
-                        except Exception as e:
-                            print(f"Error parsing dates: {e}")
-                            continue
+                        print(f"  Time difference: {time_diff} seconds")
+                        
+                        if time_diff <= 900:  # Within 15 minutes
+                            timing_matches = True
+                            print(f"  Timing match found!")
+                        
+                    except Exception as e:
+                        print(f"  Error parsing dates: {e}")
+                    
+                    # If we have both title and timing match, or just timing for failed runs
+                    if (title_matches and timing_matches) or (timing_matches and run_conclusion in ['failure', 'cancelled', 'timed_out']):
+                        target_url = run.get('html_url')
+                        print(f"FOUND MATCHING WORKFLOW RUN: {target_url}")
+                        break
                 
-                print("No matching check suite found by timing")
-                return None
+                if not target_url and workflow_runs:
+                    # Fallback: use the most recent failed run
+                    for run in workflow_runs:
+                        if run.get('conclusion') in ['failure', 'cancelled', 'timed_out']:
+                            target_url = run.get('html_url')
+                            print(f"FALLBACK: Using most recent failed run: {target_url}")
+                            break
             
-            print("Step 2: Fetching CheckSuite details...")
-            print(f"Making request to: {check_suite_url}")
-            
-            # Fetch CheckSuite details
-            response = requests.get(check_suite_url, headers=self.headers)
-            print(f"CheckSuite API Response Status: {response.status_code}")
-            print(f"CheckSuite API Response Headers: {dict(response.headers)}")
-            
-            response.raise_for_status()
-            check_suite_data = response.json()
-            
-            print("CheckSuite data received:")
-            pprint.pprint(check_suite_data, width=100, depth=2)
-            
-            print(f"CheckSuite HTML URL: {check_suite_data.get('html_url')}")
-            print(f"CheckSuite Status: {check_suite_data.get('status')}")
-            print(f"CheckSuite Conclusion: {check_suite_data.get('conclusion')}")
-            
-            return check_suite_data
+            return target_url
             
         except requests.exceptions.RequestException as e:
-            print(f"FAILED to fetch CheckSuite details: {e}")
+            print(f"FAILED to fetch GitHub Actions URL: {e}")
             if hasattr(e, 'response') and e.response is not None:
                 print(f"Error response status: {e.response.status_code}")
                 print(f"Error response body: {e.response.text}")
@@ -282,57 +287,19 @@ class GitHubNotificationBot:
                 web_url = repository.get('html_url', '')
             print(f"Converted to web URL: {web_url}")
         elif subject_type == 'CheckSuite':
-            print("CheckSuite notification detected - fetching GitHub Actions details...")
+            print("CheckSuite notification detected - fetching GitHub Actions URL...")
             # Handle GitHub Actions CheckSuite notifications
-            check_suite_details = self.get_check_suite_details(notification)
-            if check_suite_details:
-                print("CheckSuite details retrieved successfully")
-                # Get the HTML URL from CheckSuite details
-                web_url = check_suite_details.get('html_url')
+            actions_url = self.get_github_actions_url(notification)
+            if actions_url:
+                print("GitHub Actions URL retrieved successfully")
+                web_url = actions_url
                 print(f"GitHub Actions URL: {web_url}")
                 
-                # Update color based on CheckSuite status
-                status = check_suite_details.get('status')
-                conclusion = check_suite_details.get('conclusion')
-                
-                print(f"Updating embed color based on status: {status}, conclusion: {conclusion}")
-                
-                if status == 'completed':
-                    if conclusion == 'success':
-                        embed['color'] = 0x28a745  # Green for success
-                        print("Set color to GREEN (success)")
-                    elif conclusion in ['failure', 'timed_out', 'action_required']:
-                        embed['color'] = 0xdc3545  # Red for failure
-                        print("Set color to RED (failure)")
-                    elif conclusion == 'cancelled':
-                        embed['color'] = 0x6c757d  # Gray for cancelled
-                        print("Set color to GRAY (cancelled)")
-                    else:
-                        embed['color'] = 0xffc107  # Yellow for other completed states
-                        print("Set color to YELLOW (other completed)")
-                else:
-                    embed['color'] = 0x0366d6  # Blue for in progress
-                    print("Set color to BLUE (in progress)")
-                
-                # Add additional fields for CheckSuite
-                if conclusion:
-                    status_field = {
-                        "name": "Status",
-                        "value": f"{status.title()} ({conclusion.replace('_', ' ').title()})",
-                        "inline": True
-                    }
-                    embed['fields'].append(status_field)
-                    print(f"Added status field: {status_field}")
-                elif status:
-                    status_field = {
-                        "name": "Status", 
-                        "value": status.title(),
-                        "inline": True
-                    }
-                    embed['fields'].append(status_field)
-                    print(f"Added status field: {status_field}")
+                # Set color to red for failed CI by default
+                embed['color'] = 0xdc3545  # Red for failure
+                print("Set color to RED (GitHub Actions failure)")
             else:
-                print("Failed to retrieve CheckSuite details")
+                print("Failed to retrieve GitHub Actions URL")
         else:
             print(f"No URL handling for notification type: {subject_type}")
           # Add URL to embed if we found one
