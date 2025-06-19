@@ -94,6 +94,41 @@ class GitHubNotificationBot:
                 print(f"Error response body: {e.response.text}")
             return []
     
+    def get_check_suite_details(self, notification: Dict) -> Optional[Dict]:
+        """Get CheckSuite details for GitHub Actions notifications"""
+        subject = notification.get('subject', {})
+        repository = notification.get('repository', {})
+        
+        if subject.get('type') != 'CheckSuite' or not repository.get('full_name'):
+            return None
+        
+        # Extract check suite ID from the notification thread URL
+        thread_url = notification.get('url', '')
+        if not thread_url:
+            return None
+        
+        try:
+            # Get the thread details to find the CheckSuite API URL
+            response = requests.get(thread_url, headers=self.headers)
+            response.raise_for_status()
+            thread_data = response.json()
+            
+            # Look for CheckSuite URL in the thread subject
+            check_suite_url = thread_data.get('subject', {}).get('url')
+            if not check_suite_url:
+                return None
+            
+            # Fetch CheckSuite details
+            response = requests.get(check_suite_url, headers=self.headers)
+            response.raise_for_status()
+            check_suite_data = response.json()
+            
+            return check_suite_data
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to fetch CheckSuite details: {e}")
+            return None
+
     def format_notification_for_discord(self, notification: Dict) -> Dict:
         """Format a GitHub notification for Discord embed"""
         subject = notification.get('subject', {})
@@ -107,6 +142,7 @@ class GitHubNotificationBot:
             'Release': 0x6f42c1,     # Purple
             'Discussion': 0xffc107,  # Yellow
             'Commit': 0x6c757d,      # Gray
+            'CheckSuite': 0xdc3545,  # Red for failed CI
         }
         color = colors.get(subject_type, 0x586069)
         
@@ -134,9 +170,11 @@ class GitHubNotificationBot:
             ]
         }
         
-        # Add URL if available
+        # Handle URL generation based on notification type
+        web_url = None
+        
         if subject.get('url'):
-            # Convert API URL to web URL
+            # Convert API URL to web URL for standard notifications
             api_url = subject['url']
             if 'pulls' in api_url:
                 web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/pulls/', '/pull/')
@@ -144,9 +182,46 @@ class GitHubNotificationBot:
                 web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/issues/', '/issues/')
             else:
                 web_url = repository.get('html_url', '')
-            
-            if web_url:
-                embed["url"] = web_url
+        elif subject_type == 'CheckSuite':
+            # Handle GitHub Actions CheckSuite notifications
+            check_suite_details = self.get_check_suite_details(notification)
+            if check_suite_details:
+                # Get the HTML URL from CheckSuite details
+                web_url = check_suite_details.get('html_url')
+                
+                # Update color based on CheckSuite status
+                status = check_suite_details.get('status')
+                conclusion = check_suite_details.get('conclusion')
+                
+                if status == 'completed':
+                    if conclusion == 'success':
+                        embed['color'] = 0x28a745  # Green for success
+                    elif conclusion in ['failure', 'timed_out', 'action_required']:
+                        embed['color'] = 0xdc3545  # Red for failure
+                    elif conclusion == 'cancelled':
+                        embed['color'] = 0x6c757d  # Gray for cancelled
+                    else:
+                        embed['color'] = 0xffc107  # Yellow for other completed states
+                else:
+                    embed['color'] = 0x0366d6  # Blue for in progress
+                
+                # Add additional fields for CheckSuite
+                if conclusion:
+                    embed['fields'].append({
+                        "name": "Status",
+                        "value": f"{status.title()} ({conclusion.replace('_', ' ').title()})",
+                        "inline": True
+                    })
+                elif status:
+                    embed['fields'].append({
+                        "name": "Status", 
+                        "value": status.title(),
+                        "inline": True
+                    })
+        
+        # Add URL to embed if we found one
+        if web_url:
+            embed["url"] = web_url
         
         # Add author info if available
         if repository.get('owner'):
