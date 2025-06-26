@@ -118,7 +118,7 @@ class GitHubNotificationBot:
             "fields": [
                 {
                     "name": "Repository",
-                    "value": repository.get('full_name', 'Unknown'),
+                    "value": f"[{repository.get('full_name', 'Unknown')}]({repository.get('html_url', '')})" if repository.get('html_url') else repository.get('full_name', 'Unknown'),
                     "inline": True
                 },
                 {
