@@ -27,12 +27,12 @@ class GitHubNotificationBot:
         'SecurityAdvisory': 0xef4444 # Red
     }
     TYPE_EMOJIS = {
-        'Issue': '🐛',
-        'PullRequest': '🔀',
-        'Release': '🚀',
-        'Discussion': '💬',
-        'SecurityAdvisory': '🔒',
-        'Commit': '📝'
+        'Issue': 'Issue:',
+        'PullRequest': 'Pull Request:',
+        'Release': 'Release:',
+        'Discussion': 'Discussion:',
+        'SecurityAdvisory': 'Security Advisory:',
+        'Commit': 'Commit: '
     }
     REASON_DESCRIPTIONS = {
         'assign': 'You were assigned',
@@ -139,7 +139,7 @@ class GitHubNotificationBot:
 
         # Field: Repository
         embed["fields"].append({
-            "name": "📁 Repository",
+            "name": "Repository",
             "value": f"[{repo.get('full_name', 'Unknown')}]({repo.get('html_url', '#')})",
             "inline": True
         })
@@ -147,7 +147,7 @@ class GitHubNotificationBot:
         # Field: Reason for notification
         reason = notification.get('reason', 'unknown')
         embed["fields"].append({
-            "name": "🔔 Reason",
+            "name": "Reason",
             "value": self.REASON_DESCRIPTIONS.get(reason, reason.replace('_', ' ').title()),
             "inline": True
         })
@@ -157,7 +157,7 @@ class GitHubNotificationBot:
             dt_obj = datetime.fromisoformat(notification['updated_at'].replace('Z', '+00:00'))
             timestamp = int(dt_obj.timestamp())
             embed["fields"].append({
-                "name": "⏰ Last Activity",
+                "name": "Last Activity",
                 "value": f"<t:{timestamp}:R>",
                 "inline": True
             })
@@ -171,26 +171,26 @@ class GitHubNotificationBot:
             
             if subject_type == 'PullRequest':
                 if details.get('merged'):
-                    status_value = f"🟣 Merged"
+                    status_value = f"Merged"
                 elif state == 'Open':
-                    status_value = f"🟢 {state}"
+                    status_value = f"{state}"
                 else: # Closed
-                    status_value = f"🔴 {state}"
+                    status_value = f"{state}"
                 
                 if details.get('draft'):
                     status_value += " (Draft)"
 
             elif subject_type == 'Issue':
                 if state == 'Open':
-                    status_value = f"🟢 {state}"
+                    status_value = f"{state}"
                 else: # Closed
-                    status_value = f"🔴 {state}"
+                    status_value = f"{state}"
             
             else: # For Release, Discussion, etc.
                 status_value = state
         
         embed["fields"].append({
-            "name": "📊 Status",
+            "name": "Status",
             "value": status_value,
             "inline": True
         })
