@@ -2,7 +2,8 @@
 """
 GitHub Notifications to Discord Bot
 
-This script fetches GitHub notifications and sends new ones to a Discord channel.
+This script fetches GitHub notifications and sends new, richly formatted ones 
+to a Discord channel via a webhook.
 """
 
 import os
@@ -13,9 +14,40 @@ from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import hashlib
 import pprint
-
+import time
 
 class GitHubNotificationBot:
+    # Constants for formatting, inspired by the old script
+    TYPE_COLORS = {
+        'Issue': 0xdb2777,          # Pink
+        'PullRequest': 0x8b5cf6,    # Violet
+        'Release': 0xf59e0b,        # Amber
+        'Discussion': 0x3b82f6,     # Blue
+        'Commit': 0x6b7280,         # Gray
+        'SecurityAdvisory': 0xef4444 # Red
+    }
+    TYPE_EMOJIS = {
+        'Issue': '🐛',
+        'PullRequest': '🔀',
+        'Release': '🚀',
+        'Discussion': '💬',
+        'SecurityAdvisory': '🔒',
+        'Commit': '📝'
+    }
+    REASON_DESCRIPTIONS = {
+        'assign': 'You were assigned',
+        'author': 'You created this thread',
+        'comment': 'New comment',
+        'invitation': 'You were invited to a repository',
+        'manual': 'You subscribed manually',
+        'mention': 'You were mentioned',
+        'review_requested': 'Your review was requested',
+        'security_alert': 'A security alert was triggered',
+        'state_change': 'The state was changed',
+        'subscribed': 'You are watching this repository',
+        'team_mention': 'Your team was mentioned'
+    }
+
     def __init__(self):
         self.github_token = os.getenv('PRIVATE_GITHUB_TOKEN')
         self.discord_webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
@@ -29,8 +61,22 @@ class GitHubNotificationBot:
         self.headers = {
             'Authorization': f'token {self.github_token}',
             'Accept': 'application/vnd.github+json',
-            'X-GitHub-Api-Version': '2022-11-28'        }
-        
+            'X-GitHub-Api-Version': '2022-11-28'
+        }
+    
+    def _get_subject_details(self, url: str) -> Optional[Dict]:
+        """Helper to fetch details for a PR or Issue from its API URL."""
+        if not url:
+            return None
+        try:
+            print(f"    Fetching details from: {url}")
+            response = requests.get(url, headers=self.headers, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"    Could not fetch details for {url}. Error: {e}")
+            return None
+
     def get_notifications(self) -> List[Dict]:
         """Fetch GitHub notifications"""
         print("\n" + "="*50)
@@ -39,126 +85,120 @@ class GitHubNotificationBot:
         
         url = 'https://api.github.com/notifications'
         params = {
-            'all': 'false',  # Only unread notifications
-            'participating': 'false'  # Include all notifications, not just participating
-        }        
-        print(f"API Endpoint: {url}")
-        print(f"Initial Parameters: {json.dumps(params, indent=2)}")
-        
-        # If we have a last check time, only get notifications since then
+            'all': 'false',
+            'participating': 'false'
+        }
         if self.last_check_time:
-            print(f"Last check time found: {self.last_check_time}")
-            # Validate that last_check_time is a proper ISO 8601 datetime
-            # If it's just "0" or invalid, skip the since parameter
             try:
-                # Try to parse as ISO 8601 datetime
                 datetime.fromisoformat(self.last_check_time.replace('Z', '+00:00'))
                 params['since'] = self.last_check_time
                 print(f"Using 'since' parameter: {self.last_check_time}")
             except (ValueError, AttributeError):
-                print(f"Invalid LAST_CHECK_TIME format: {self.last_check_time}. Fetching all notifications.")                # Don't add since parameter, will fetch all unread notifications
+                print(f"Invalid LAST_CHECK_TIME format: {self.last_check_time}. Fetching all notifications.")
         else:
             print("No last check time found - fetching all unread notifications")
         
-        print(f"Final Parameters: {json.dumps(params, indent=2)}")
-        print(f"Headers: {json.dumps({k: v if k != 'Authorization' else 'token [REDACTED]' for k, v in self.headers.items()}, indent=2)}")
-        
         try:
-            print("\nMaking API request...")
             response = requests.get(url, headers=self.headers, params=params)
-            print(f"Response Status: {response.status_code}")
-            print(f"Response Headers: {dict(response.headers)}")
-            
             response.raise_for_status()
             notifications = response.json()
-            
-            print(f"\nGITHUB API RESPONSE:")
             print(f"Total notifications received: {len(notifications)}")
-            
-            if notifications:
-                print("\nDETAILED NOTIFICATION DATA:")
-                for i, notification in enumerate(notifications, 1):
-                    print(f"\n--- Notification #{i} ---")
-                    print("Raw JSON data:")
-                    pprint.pprint(notification, width=100, depth=3)
-                    print("-" * 30)
-            else:
-                print("No notifications returned from API")
-            
             return notifications
             
         except requests.exceptions.RequestException as e:
             print(f"API REQUEST FAILED: {e}")
-            if hasattr(e, 'response') and e.response is not None:
-                print(f"Error response status: {e.response.status_code}")
-                print(f"Error response body: {e.response.text}")
             return []
-    
+
     def format_notification_for_discord(self, notification: Dict) -> Dict:
-        """Format a GitHub notification for Discord embed"""
+        """Format a GitHub notification for a rich Discord embed."""
         subject = notification.get('subject', {})
-        repository = notification.get('repository', {})
-        
-        # Determine notification type and color
+        repo = notification.get('repository', {})
         subject_type = subject.get('type', 'Unknown')
-        colors = {
-            'Issue': 0x28a745,      # Green
-            'PullRequest': 0x0366d6, # Blue
-            'Release': 0x6f42c1,     # Purple
-            'Discussion': 0xffc107,  # Yellow
-            'Commit': 0x6c757d,      # Gray
-        }
-        color = colors.get(subject_type, 0x586069)
-        
-        # Create Discord embed
+
+        # Basic embed structure
+        emoji = self.TYPE_EMOJIS.get(subject_type, '📢')
         embed = {
-            "title": subject.get('title', 'No title'),
-            "color": color,
+            "title": f"{emoji} {subject.get('title', 'No title')}",
+            "color": self.TYPE_COLORS.get(subject_type, 0x586069),
             "timestamp": notification.get('updated_at'),
-            "fields": [
-                {
-                    "name": "Repository",
-                    "value": f"[{repository.get('full_name', 'Unknown')}]({repository.get('html_url', '')})" if repository.get('html_url') else repository.get('full_name', 'Unknown'),
-                    "inline": True
-                },
-                {
-                    "name": "Type",
-                    "value": subject_type,
-                    "inline": True
-                },
-                {
-                    "name": "Reason",
-                    "value": notification.get('reason', 'Unknown').replace('_', ' ').title(),
-                    "inline": True
-                }
-            ]
+            "fields": []
         }
-        
-        # Add URL if available
+
+        # Set thumbnail to repo owner's avatar
+        if repo.get('owner', {}).get('avatar_url'):
+            embed["thumbnail"] = {"url": repo['owner']['avatar_url']}
+
+        # Convert API URL to a user-friendly web URL
         if subject.get('url'):
-            # Convert API URL to web URL
             api_url = subject['url']
-            if 'pulls' in api_url:
-                web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/pulls/', '/pull/')
-            elif 'issues' in api_url:
-                web_url = api_url.replace('api.github.com/repos', 'github.com').replace('/issues/', '/issues/')
-            else:
-                web_url = repository.get('html_url', '')
+            web_url = api_url.replace('api.github.com/repos', 'github.com')
+            if '/pulls/' in web_url:
+                web_url = web_url.replace('/pulls/', '/pull/')
+            # No change needed for /issues/
+            embed["url"] = web_url
+
+        # Field: Repository
+        embed["fields"].append({
+            "name": "📁 Repository",
+            "value": f"[{repo.get('full_name', 'Unknown')}]({repo.get('html_url', '#')})",
+            "inline": True
+        })
+
+        # Field: Reason for notification
+        reason = notification.get('reason', 'unknown')
+        embed["fields"].append({
+            "name": "🔔 Reason",
+            "value": self.REASON_DESCRIPTIONS.get(reason, reason.replace('_', ' ').title()),
+            "inline": True
+        })
+        
+        # Field: Last Activity Time (relative)
+        if notification.get('updated_at'):
+            dt_obj = datetime.fromisoformat(notification['updated_at'].replace('Z', '+00:00'))
+            timestamp = int(dt_obj.timestamp())
+            embed["fields"].append({
+                "name": "⏰ Last Activity",
+                "value": f"<t:{timestamp}:R>",
+                "inline": True
+            })
+
+        # --- Detailed Status Field (with extra API call) ---
+        status_value = "Unavailable"
+        details = self._get_subject_details(subject.get('url'))
+        
+        if details:
+            state = details.get('state', 'unknown').title()
             
-            if web_url:
-                embed["url"] = web_url
+            if subject_type == 'PullRequest':
+                if details.get('merged'):
+                    status_value = f"🟣 Merged"
+                elif state == 'Open':
+                    status_value = f"🟢 {state}"
+                else: # Closed
+                    status_value = f"🔴 {state}"
+                
+                if details.get('draft'):
+                    status_value += " (Draft)"
+
+            elif subject_type == 'Issue':
+                if state == 'Open':
+                    status_value = f"🟢 {state}"
+                else: # Closed
+                    status_value = f"🔴 {state}"
+            
+            else: # For Release, Discussion, etc.
+                status_value = state
         
-        # Add author info if available
-        if repository.get('owner'):
-            embed["author"] = {
-                "name": repository['owner']['login'],
-                "icon_url": repository['owner'].get('avatar_url', ''),
-                "url": repository['owner'].get('html_url', '')            }
-        
+        embed["fields"].append({
+            "name": "📊 Status",
+            "value": status_value,
+            "inline": True
+        })
+
         return embed
-    
+
     def send_to_discord(self, notifications: List[Dict]) -> bool:
-        """Send notifications to Discord"""
+        """Send notifications to Discord, formatting each one."""
         print("\n" + "="*50)
         print("STEP 2: FORMATTING AND SENDING TO DISCORD")
         print("="*50)
@@ -169,19 +209,18 @@ class GitHubNotificationBot:
         
         print(f"Processing {len(notifications)} notifications for Discord...")
         
-        # Group notifications to avoid hitting Discord's rate limits
-        # Send up to 10 embeds per message
+        # Sort notifications by time (oldest first) to send in chronological order
+        notifications.sort(key=lambda n: n['updated_at'])
+        
         for i in range(0, len(notifications), 10):
             batch = notifications[i:i+10]
             print(f"\nProcessing batch {i//10 + 1} ({len(batch)} notifications)...")
             
-            # Format each notification for Discord
             embeds = []
             for j, notif in enumerate(batch):
                 print(f"\n--- Formatting notification {i+j+1} for Discord ---")
+                pprint.pprint(notif, depth=2)
                 embed = self.format_notification_for_discord(notif)
-                print("Discord embed data:")
-                pprint.pprint(embed, width=100, depth=3)
                 embeds.append(embed)
             
             discord_payload = {
@@ -189,32 +228,18 @@ class GitHubNotificationBot:
                 "embeds": embeds
             }
             
-            print(f"\nFINAL DISCORD PAYLOAD FOR BATCH {i//10 + 1}:")
-            print("Full payload being sent to Discord:")
-            pprint.pprint(discord_payload, width=100, depth=4)
-            
-            print(f"\nSending to Discord webhook: {self.discord_webhook_url[:50]}...")
-            
+            print(f"\nSending batch {i//10 + 1} to Discord...")
             try:
                 response = requests.post(
                     self.discord_webhook_url,
                     json=discord_payload,
                     headers={'Content-Type': 'application/json'}
                 )
-                print(f"Discord API Response Status: {response.status_code}")
-                print(f"Discord API Response Headers: {dict(response.headers)}")
-                if response.text:
-                    print(f"Discord API Response Body: {response.text}")
-                
                 response.raise_for_status()
-                print(f"SUCCESS: Sent {len(batch)} notifications to Discord")
-                
-                # Add a small delay between batches to respect rate limits
+                print(f"SUCCESS: Sent {len(batch)} notifications to Discord (Status: {response.status_code})")
                 if i + 10 < len(notifications):
-                    import time
                     print("Waiting 1 second before next batch...")
                     time.sleep(1)
-                    
             except requests.exceptions.RequestException as e:
                 print(f"ERROR sending to Discord: {e}")
                 if hasattr(e, 'response') and e.response is not None:
@@ -230,35 +255,25 @@ class GitHubNotificationBot:
         print("GITHUB NOTIFICATIONS TO DISCORD BOT - STARTING")
         print("="*60)
         
-        print(f"Checking GitHub notifications...")
-        print(f"Last check time: {self.last_check_time or 'Never'}")
-        
-        # Fetch notifications
         notifications = self.get_notifications()
-        print(f"\nFound {len(notifications)} notifications")
         
         if notifications:
-            # Send all notifications to Discord without filtering
             success = self.send_to_discord(notifications)
             if success:
                 print("\n" + "="*60)
-                print("FINAL RESULT: Successfully processed all notifications")
-                print("="*60)
+                print("FINAL RESULT: Successfully processed all notifications.")
             else:
                 print("\n" + "="*60)
-                print("FINAL RESULT: Some notifications failed to send")
-                print("="*60)
+                print("FINAL RESULT: Some notifications failed to send.")
                 sys.exit(1)
         else:
             print("\n" + "="*60)
-            print("FINAL RESULT: No new notifications found")
-            print("="*60)
-
+            print("FINAL RESULT: No new notifications found.")
 
 if __name__ == "__main__":
     try:
         bot = GitHubNotificationBot()
         bot.run()
     except Exception as e:
-        print(f"Error running notification bot: {e}")
+        print(f"FATAL ERROR running notification bot: {e}")
         sys.exit(1)
