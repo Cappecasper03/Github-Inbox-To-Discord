@@ -26,27 +26,6 @@ class GitHubNotificationBot:
         'Commit': 0x6b7280,         # Gray
         'SecurityAdvisory': 0xef4444 # Red
     }
-    TYPE_EMOJIS = {
-        'Issue': 'Issue:',
-        'PullRequest': 'Pull Request:',
-        'Release': 'Release:',
-        'Discussion': 'Discussion:',
-        'SecurityAdvisory': 'Security Advisory:',
-        'Commit': 'Commit: '
-    }
-    REASON_DESCRIPTIONS = {
-        'assign': 'You were assigned',
-        'author': 'You created this thread',
-        'comment': 'New comment',
-        'invitation': 'You were invited to a repository',
-        'manual': 'You subscribed manually',
-        'mention': 'You were mentioned',
-        'review_requested': 'Your review was requested',
-        'security_alert': 'A security alert was triggered',
-        'state_change': 'The state was changed',
-        'subscribed': 'You are watching this repository',
-        'team_mention': 'Your team was mentioned'
-    }
 
     def __init__(self):
         self.github_token = os.getenv('PRIVATE_GITHUB_TOKEN')
@@ -116,9 +95,8 @@ class GitHubNotificationBot:
         subject_type = subject.get('type', 'Unknown')
 
         # Basic embed structure
-        emoji = self.TYPE_EMOJIS.get(subject_type, '📢')
         embed = {
-            "title": f"{emoji} {subject.get('title', 'No title')}",
+            "title": f"{subject_type}: {subject.get('title', 'No title')}",
             "color": self.TYPE_COLORS.get(subject_type, 0x586069),
             "timestamp": notification.get('updated_at'),
             "fields": []
@@ -148,7 +126,7 @@ class GitHubNotificationBot:
         reason = notification.get('reason', 'unknown')
         embed["fields"].append({
             "name": "Reason",
-            "value": self.REASON_DESCRIPTIONS.get(reason, reason.replace('_', ' ').title()),
+            "value": reason,
             "inline": True
         })
         
