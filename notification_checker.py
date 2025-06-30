@@ -96,7 +96,7 @@ class GitHubNotificationBot:
 
         # Basic embed structure
         embed = {
-            "title": f"{subject_type}: {subject.get('title', 'No title')}",
+            "title": subject.get('title', 'No title'),
             "color": self.TYPE_COLORS.get(subject_type, 0x586069),
             "timestamp": notification.get('updated_at'),
             "fields": []
@@ -114,6 +114,13 @@ class GitHubNotificationBot:
                 web_url = web_url.replace('/pulls/', '/pull/')
             # No change needed for /issues/
             embed["url"] = web_url
+
+        # Field: Type
+        embed["fields"].append({
+            "name": "Type",
+            "value": subject_type,
+            "inline": True
+        })
 
         # Field: Repository
         embed["fields"].append({
