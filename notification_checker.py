@@ -9,6 +9,7 @@ to a Discord channel via a webhook.
 import os
 import sys
 import json
+import re
 import requests
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
@@ -43,6 +44,178 @@ class GitHubNotificationBot:
             'X-GitHub-Api-Version': '2022-11-28'
         }
     
+    def get_comment_content(self, notification: Dict) -> Optional[Dict]:
+        """Fetch the actual comment content that triggered the notification"""
+        try:
+            subject = notification.get('subject', {})
+            reason = notification.get('reason', '')
+            
+            # Only fetch comments for relevant notification reasons
+            if reason not in ['comment', 'mention']:
+                return None
+            
+            # Get notification timestamp for comparison
+            notification_time_str = notification.get('updated_at')
+            if not notification_time_str:
+                return None
+                
+            notification_time = datetime.fromisoformat(notification_time_str.replace('Z', '+00:00'))
+            
+            subject_type = subject.get('type')
+            subject_url = subject.get('url')
+            
+            if not subject_url:
+                return None
+            
+            comment_content = None
+            comment_author = None
+            comment_url = None
+            matching_comment = None
+            
+            if subject_type == 'Issue':
+                # Extract issue number from URL
+                import re
+                issue_match = re.search(r'/issues/(\d+)', subject_url)
+                if issue_match:
+                    issue_number = issue_match.group(1)
+                    repo_match = re.search(r'/repos/([^/]+/[^/]+)/', subject_url)
+                    if repo_match:
+                        repo_name = repo_match.group(1)
+                        comments_url = f"https://api.github.com/repos/{repo_name}/issues/{issue_number}/comments"
+                        
+                        print(f"    Fetching issue comments from: {comments_url}")
+                        response = requests.get(comments_url, headers=self.headers, timeout=10)
+                        response.raise_for_status()
+                        comments = response.json()
+                        
+                        if comments:
+                            # Find comment closest to notification time
+                            time_tolerance_seconds = 300  # 5 minutes
+                            
+                            for comment in reversed(comments):  # Start from newest
+                                comment_time = datetime.fromisoformat(comment['created_at'].replace('Z', '+00:00'))
+                                time_diff = abs((notification_time - comment_time).total_seconds())
+                                
+                                if time_diff <= time_tolerance_seconds:
+                                    matching_comment = comment
+                                    break
+                            
+                            # If no exact match, use the most recent comment before notification
+                            if not matching_comment:
+                                for comment in reversed(comments):
+                                    comment_time = datetime.fromisoformat(comment['created_at'].replace('Z', '+00:00'))
+                                    if comment_time <= notification_time:
+                                        matching_comment = comment
+                                        break
+                            
+                            # Fallback to latest comment
+                            if not matching_comment and comments:
+                                matching_comment = comments[-1]
+                            
+                            if matching_comment:
+                                comment_content = matching_comment.get('body', '')
+                                comment_author = matching_comment.get('user', {}).get('login', 'Unknown')
+                                comment_url = matching_comment.get('html_url', '')
+                        
+            elif subject_type == 'PullRequest':
+                # Extract PR number from URL
+                pr_match = re.search(r'/pulls/(\d+)', subject_url)
+                if pr_match:
+                    pr_number = pr_match.group(1)
+                    repo_match = re.search(r'/repos/([^/]+/[^/]+)/', subject_url)
+                    if repo_match:
+                        repo_name = repo_match.group(1)
+                        
+                        # Get both issue comments and review comments for PRs
+                        issue_comments_url = f"https://api.github.com/repos/{repo_name}/issues/{pr_number}/comments"
+                        review_comments_url = f"https://api.github.com/repos/{repo_name}/pulls/{pr_number}/comments"
+                        
+                        all_comments = []
+                        
+                        # Fetch issue comments
+                        try:
+                            print(f"    Fetching PR issue comments from: {issue_comments_url}")
+                            response = requests.get(issue_comments_url, headers=self.headers, timeout=10)
+                            response.raise_for_status()
+                            issue_comments = response.json()
+                            
+                            for comment in issue_comments:
+                                comment_time = datetime.fromisoformat(comment['created_at'].replace('Z', '+00:00'))
+                                all_comments.append({
+                                    'created_at': comment_time,
+                                    'body': comment.get('body', ''),
+                                    'author': comment.get('user', {}).get('login', 'Unknown'),
+                                    'url': comment.get('html_url', ''),
+                                    'type': 'issue_comment'
+                                })
+                        except requests.exceptions.RequestException as e:
+                            print(f"    Could not fetch issue comments: {e}")
+                        
+                        # Fetch review comments
+                        try:
+                            print(f"    Fetching PR review comments from: {review_comments_url}")
+                            response = requests.get(review_comments_url, headers=self.headers, timeout=10)
+                            response.raise_for_status()
+                            review_comments = response.json()
+                            
+                            for comment in review_comments:
+                                comment_time = datetime.fromisoformat(comment['created_at'].replace('Z', '+00:00'))
+                                all_comments.append({
+                                    'created_at': comment_time,
+                                    'body': comment.get('body', ''),
+                                    'author': comment.get('user', {}).get('login', 'Unknown'),
+                                    'url': comment.get('html_url', ''),
+                                    'type': 'review_comment'
+                                })
+                        except requests.exceptions.RequestException as e:
+                            print(f"    Could not fetch review comments: {e}")
+                        
+                        if all_comments:
+                            # Sort by creation time (newest first)
+                            all_comments.sort(key=lambda x: x['created_at'], reverse=True)
+                            
+                            # Find comment that matches the notification time
+                            time_tolerance_seconds = 300  # 5 minutes
+                            
+                            for comment_data in all_comments:
+                                time_diff = abs((notification_time - comment_data['created_at']).total_seconds())
+                                if time_diff <= time_tolerance_seconds:
+                                    matching_comment = comment_data
+                                    break
+                            
+                            # If no exact match, use the most recent comment before notification
+                            if not matching_comment:
+                                for comment_data in all_comments:
+                                    if comment_data['created_at'] <= notification_time:
+                                        matching_comment = comment_data
+                                        break
+                            
+                            # Fallback to latest comment
+                            if not matching_comment and all_comments:
+                                matching_comment = all_comments[0]
+                            
+                            if matching_comment:
+                                comment_content = matching_comment['body']
+                                comment_author = matching_comment['author']
+                                comment_url = matching_comment['url']
+            
+            if comment_content:
+                # Truncate long comments for Discord embed limits
+                max_length = 1000  # Leave room for other embed content
+                if len(comment_content) > max_length:
+                    comment_content = comment_content[:max_length-3] + "..."
+                
+                return {
+                    'content': comment_content,
+                    'author': comment_author,
+                    'url': comment_url
+                }
+                
+        except Exception as e:
+            print(f"    Could not fetch comment content for notification: {e}")
+            
+        return None
+
     def _get_subject_details(self, url: str) -> Optional[Dict]:
         """Helper to fetch details for a PR or Issue from its API URL."""
         if not url:
@@ -179,6 +352,20 @@ class GitHubNotificationBot:
             "value": status_value,
             "inline": True
         })
+
+        # --- Add comment content if available ---
+        comment_data = self.get_comment_content(notification)
+        if comment_data:
+            comment_text = comment_data['content']
+            comment_author = comment_data['author']
+            comment_url = comment_data['url']
+            
+            # Format the comment content
+            embed["fields"].append({
+                "name": f"💬 Latest Comment by @{comment_author}",
+                "value": f"```\n{comment_text}\n```\n[View Comment]({comment_url})",
+                "inline": False
+            })
 
         return embed
 
