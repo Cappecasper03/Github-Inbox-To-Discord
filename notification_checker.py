@@ -18,14 +18,21 @@ import pprint
 import time
 
 class GitHubNotificationBot:
-    # Constants for formatting, inspired by the old script
+    # Constants for formatting - Base type colors
     TYPE_COLORS = {
         'Issue': 0xdb2777,          # Pink
         'PullRequest': 0x8b5cf6,    # Violet
         'Release': 0xf59e0b,        # Amber
         'Discussion': 0x3b82f6,     # Blue
         'Commit': 0x6b7280,         # Gray
-        'SecurityAdvisory': 0xef4444 # Red
+        'SecurityAdvisory': 0xff6b35 # Orange
+    }
+    
+    # State-specific colors (override base colors when applicable)
+    STATE_COLORS = {
+        'open': 0x10b981,          # Green - for open issues/PRs
+        'closed': 0xef4444,        # Red - for closed issues/PRs
+        'merged': 0x8b5cf6,        # Purple - for merged PRs
     }
 
     def __init__(self):
@@ -267,10 +274,49 @@ class GitHubNotificationBot:
         repo = notification.get('repository', {})
         subject_type = subject.get('type', 'Unknown')
 
-        # Basic embed structure
+        # Get detailed status information first to determine color
+        status_value = "Unavailable"
+        embed_color = self.TYPE_COLORS.get(subject_type, 0x586069)  # Default color
+        details = self._get_subject_details(subject.get('url'))
+        
+        if details:
+            state = details.get('state', 'unknown').lower()
+            
+            if subject_type == 'PullRequest':
+                if details.get('merged'):
+                    status_value = "Merged"
+                    embed_color = self.STATE_COLORS['merged']
+                elif state == 'open':
+                    status_value = "Open"
+                    embed_color = self.STATE_COLORS['open']
+                elif state == 'closed':
+                    status_value = "Closed"
+                    embed_color = self.STATE_COLORS['closed']
+                else:
+                    status_value = state.title()
+                
+                if details.get('draft') and state == 'open':
+                    status_value += " (Draft)"
+                    # Keep the open color but could add a draft-specific color if desired
+
+            elif subject_type == 'Issue':
+                if state == 'open':
+                    status_value = "Open"
+                    embed_color = self.STATE_COLORS['open']
+                elif state == 'closed':
+                    status_value = "Closed"
+                    embed_color = self.STATE_COLORS['closed']
+                else:
+                    status_value = state.title()
+            
+            else: # For Release, Discussion, etc. - use base type colors
+                status_value = state.title()
+                # Keep the base type color for these
+        
+        # Basic embed structure with dynamic color
         embed = {
             "title": subject.get('title', 'No title'),
-            "color": self.TYPE_COLORS.get(subject_type, 0x586069),
+            "color": embed_color,
             "timestamp": notification.get('updated_at'),
             "fields": []
         }
@@ -320,33 +366,7 @@ class GitHubNotificationBot:
                 "inline": True
             })
 
-        # --- Detailed Status Field (with extra API call) ---
-        status_value = "Unavailable"
-        details = self._get_subject_details(subject.get('url'))
-        
-        if details:
-            state = details.get('state', 'unknown').title()
-            
-            if subject_type == 'PullRequest':
-                if details.get('merged'):
-                    status_value = f"Merged"
-                elif state == 'Open':
-                    status_value = f"{state}"
-                else: # Closed
-                    status_value = f"{state}"
-                
-                if details.get('draft'):
-                    status_value += " (Draft)"
-
-            elif subject_type == 'Issue':
-                if state == 'Open':
-                    status_value = f"{state}"
-                else: # Closed
-                    status_value = f"{state}"
-            
-            else: # For Release, Discussion, etc.
-                status_value = state
-        
+        # Add status field (status_value was determined above during color selection)
         embed["fields"].append({
             "name": "Status",
             "value": status_value,
