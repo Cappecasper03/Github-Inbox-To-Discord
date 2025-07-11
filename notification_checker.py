@@ -431,7 +431,7 @@ class GitHubNotificationBot:
         # Sort notifications by time (oldest first) to send in chronological order
         notifications.sort(key=lambda n: n['updated_at'])
         
-        for i in range(0, len(notifications), 20):
+        for i in range(0, len(notifications), 10):
             batch = notifications[i:i+10]
             print(f"\nProcessing batch {i//10 + 1} ({len(batch)} notifications)...")
             
