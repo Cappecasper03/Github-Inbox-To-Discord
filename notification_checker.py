@@ -276,6 +276,10 @@ class GitHubNotificationBot:
         repo = notification.get('repository', {})
         subject_type = subject.get('type', 'Unknown')
 
+        # Default status and color, which can be overridden by specific logic below
+        status_value = "Unknown"
+        embed_color = self.TYPE_COLORS.get(subject_type, 0x6b7280)  # Default to gray if type is new
+
         # Determine if it's a workflow notification and check for immediate skipping conditions
         is_workflow_notification = subject_type in ['CheckSuite', 'CheckRun']
         title_lower = subject.get('title', '').lower().strip() # Add .strip()
