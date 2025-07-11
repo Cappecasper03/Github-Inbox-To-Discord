@@ -437,7 +437,6 @@ class GitHubNotificationBot:
                     embeds.append(embed)
             
             discord_payload = {
-                "content": f"**{len(batch)} new GitHub notification{'s' if len(batch) > 1 else ''}**",
                 "embeds": embeds
             }
             
