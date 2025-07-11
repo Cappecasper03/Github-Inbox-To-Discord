@@ -282,6 +282,11 @@ class GitHubNotificationBot:
         if details:
             state = details.get('state', 'unknown').lower()
             
+            # Filter out cancelled workflows if type is CheckSuite and title contains "workflow run cancelled"
+            if subject_type == 'CheckSuite' and "workflow run cancelled" in subject.get('title', '').lower():
+                print(f"    Skipping cancelled workflow (CheckSuite): {subject.get('title', 'No title')}")
+                return None # Return None to indicate this notification should be skipped
+            
             if subject_type == 'PullRequest':
                 if details.get('merged'):
                     status_value = "Merged"
@@ -413,7 +418,8 @@ class GitHubNotificationBot:
                 print(f"\n--- Formatting notification {i+j+1} for Discord ---")
                 pprint.pprint(notif, depth=2)
                 embed = self.format_notification_for_discord(notif)
-                embeds.append(embed)
+                if embed: # Only add if embed is not None
+                    embeds.append(embed)
             
             discord_payload = {
                 "content": f"**{len(batch)} new GitHub notification{'s' if len(batch) > 1 else ''}**",
