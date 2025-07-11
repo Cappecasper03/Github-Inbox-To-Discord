@@ -33,6 +33,8 @@ class GitHubNotificationBot:
         'open': 0x10b981,          # Green - for open issues/PRs
         'closed': 0xef4444,        # Red - for closed issues/PRs
         'merged': 0x8b5cf6,        # Purple - for merged PRs
+        'failure': 0xef4444,       # Red - for failed workflows
+        'success': 0x10b981,       # Green - for successful workflows
     }
 
     def __init__(self):
@@ -297,12 +299,16 @@ class GitHubNotificationBot:
                 # Check for status/conclusion in details for CheckSuite/CheckRun
                 status = details.get('status')
                 conclusion = details.get('conclusion')
-                
-                if status == 'completed' and conclusion in ['cancelled', 'skipped', 'failure']:# Keep this as a secondary, more precise check
-                    print(f"    Skipping workflow due to status/conclusion: {subject.get('title', 'No title')} (Status: {status}, Conclusion: {conclusion})")
-                    return None
-            
-            if subject_type == 'PullRequest':
+
+                if status == 'completed':
+                    if conclusion in ['cancelled', 'skipped']:
+                        print(f"    Skipping workflow due to status/conclusion: {subject.get('title', 'No title')} (Status: {status}, Conclusion: {conclusion})")
+                        return None
+                    elif conclusion in self.STATE_COLORS:
+                        embed_color = self.STATE_COLORS[conclusion]
+                        status_value = conclusion.title()
+
+            elif subject_type == 'PullRequest':""
                 if details.get('merged'):
                     status_value = "Merged"
                     embed_color = self.STATE_COLORS['merged']
