@@ -297,12 +297,12 @@ class GitHubNotificationBot:
             
             if is_workflow_notification:
                 # Check for status/conclusion in details for CheckSuite/CheckRun
-                status = details.get('status')
+                status_value = details.get('status')
                 conclusion = details.get('conclusion')
 
-                if status == 'completed':
+                if status_value == 'completed':
                     if conclusion in ['cancelled', 'skipped']:
-                        print(f"    Skipping workflow due to status/conclusion: {subject.get('title', 'No title')} (Status: {status}, Conclusion: {conclusion})")
+                        print(f"    Skipping workflow due to status/conclusion: {subject.get('title', 'No title')} (Status: {status_value}, Conclusion: {conclusion})")
                         return None
 
             elif subject_type == 'PullRequest':
