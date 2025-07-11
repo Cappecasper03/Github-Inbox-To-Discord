@@ -282,10 +282,24 @@ class GitHubNotificationBot:
         if details:
             state = details.get('state', 'unknown').lower()
             
-            # Filter out cancelled workflows if type is CheckSuite and title contains "workflow run cancelled"
-            if subject_type == 'CheckSuite' and "workflow run cancelled" in subject.get('title', '').lower():
-                print(f"    Skipping cancelled workflow (CheckSuite): {subject.get('title', 'No title')}")
-                return None # Return None to indicate this notification should be skipped
+            # Filter out cancelled/skipped workflows based on type, title, and status/conclusion
+            is_workflow_notification = subject_type in ['CheckSuite', 'CheckRun']
+            title_lower = subject.get('title', '').lower()
+            
+            if is_workflow_notification:
+                # Check for common cancellation/skipped phrases in title
+                if any(phrase in title_lower for phrase in ["workflow run cancelled", "workflow run skipped", "cancelled workflow", "skipped workflow"]):
+                    print(f"    Skipping workflow due to title match: {subject.get('title', 'No title')}")
+                    return None
+                
+                # Check for status/conclusion in details for CheckSuite/CheckRun
+                if details:
+                    status = details.get('status')
+                    conclusion = details.get('conclusion')
+                    
+                    if status == 'completed' and conclusion in ['cancelled', 'skipped', 'failure']:
+                        print(f"    Skipping workflow due to status/conclusion: {subject.get('title', 'No title')} (Status: {status}, Conclusion: {conclusion})")
+                        return None
             
             if subject_type == 'PullRequest':
                 if details.get('merged'):
