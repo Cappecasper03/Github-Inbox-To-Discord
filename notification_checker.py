@@ -274,7 +274,17 @@ class GitHubNotificationBot:
         repo = notification.get('repository', {})
         subject_type = subject.get('type', 'Unknown')
 
-        # Get detailed status information first to determine color
+        # Determine if it's a workflow notification and check for immediate skipping conditions
+        is_workflow_notification = subject_type in ['CheckSuite', 'CheckRun']
+        title_lower = subject.get('title', '').lower()
+
+        if is_workflow_notification:
+            # Check for common cancellation/skipped phrases in title first
+            if any(phrase in title_lower for phrase in ["workflow run cancelled", "workflow run skipped", "cancelled workflow", "skipped workflow"]):
+                print(f"    Skipping workflow due to title match: {subject.get('title', 'No title')}")
+                return None
+
+        # Get detailed status information to determine color and further filter
         status_value = "Unavailable"
         embed_color = self.TYPE_COLORS.get(subject_type, 0x586069)  # Default color
         details = self._get_subject_details(subject.get('url'))
@@ -282,24 +292,14 @@ class GitHubNotificationBot:
         if details:
             state = details.get('state', 'unknown').lower()
             
-            # Filter out cancelled/skipped workflows based on type, title, and status/conclusion
-            is_workflow_notification = subject_type in ['CheckSuite', 'CheckRun']
-            title_lower = subject.get('title', '').lower()
-            
             if is_workflow_notification:
-                # Check for common cancellation/skipped phrases in title
-                if any(phrase in title_lower for phrase in ["workflow run cancelled", "workflow run skipped", "cancelled workflow", "skipped workflow"]):
-                    print(f"    Skipping workflow due to title match: {subject.get('title', 'No title')}")
-                    return None
-                
                 # Check for status/conclusion in details for CheckSuite/CheckRun
-                if details:
-                    status = details.get('status')
-                    conclusion = details.get('conclusion')
-                    
-                    if status == 'completed' and conclusion in ['cancelled', 'skipped', 'failure']:
-                        print(f"    Skipping workflow due to status/conclusion: {subject.get('title', 'No title')} (Status: {status}, Conclusion: {conclusion})")
-                        return None
+                status = details.get('status')
+                conclusion = details.get('conclusion')
+                
+                if status == 'completed' and conclusion in ['cancelled', 'skipped', 'failure']:
+                    print(f"    Skipping workflow due to status/conclusion: {subject.get('title', 'No title')} (Status: {status}, Conclusion: {conclusion})")
+                    return None
             
             if subject_type == 'PullRequest':
                 if details.get('merged'):
