@@ -286,10 +286,10 @@ class GitHubNotificationBot:
             if re.search(r'workflow run (cancelled|skipped)|(cancelled|skipped) workflow', title_lower):
                 print(f"    Skipping workflow due to title match: {subject.get('title', 'No title')}")
                 return None
+            # Check for workflow failure title using regex
+            if re.search(r'workflow run (failed|failure)|(failed|failure) workflow', title_lower):
+                embed_color = self.STATE_COLORS['failure']
 
-        # Get detailed status information to determine color and further filter
-        status_value = "Unavailable"
-        embed_color = self.TYPE_COLORS.get(subject_type, 0x586069)  # Default color
         details = self._get_subject_details(subject.get('url'))
         
         if details:
@@ -304,9 +304,6 @@ class GitHubNotificationBot:
                     if conclusion in ['cancelled', 'skipped']:
                         print(f"    Skipping workflow due to status/conclusion: {subject.get('title', 'No title')} (Status: {status}, Conclusion: {conclusion})")
                         return None
-                    elif conclusion in self.STATE_COLORS:
-                        embed_color = self.STATE_COLORS[conclusion]
-                        status_value = conclusion.title()
 
             elif subject_type == 'PullRequest':
                 if details.get('merged'):
