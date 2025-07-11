@@ -276,11 +276,12 @@ class GitHubNotificationBot:
 
         # Determine if it's a workflow notification and check for immediate skipping conditions
         is_workflow_notification = subject_type in ['CheckSuite', 'CheckRun']
-        title_lower = subject.get('title', '').lower()
+        title_lower = subject.get('title', '').lower().strip() # Add .strip()
 
         if is_workflow_notification:
-            # Check for common cancellation/skipped phrases in title first
-            if any(phrase in title_lower for phrase in ["workflow run cancelled", "workflow run skipped", "cancelled workflow", "skipped workflow"]):
+            # Use regex for more robust matching of cancellation/skipped phrases in title
+            # This handles variations in spacing or other subtle differences
+            if re.search(r'workflow run (cancelled|skipped)|(cancelled|skipped) workflow', title_lower):
                 print(f"    Skipping workflow due to title match: {subject.get('title', 'No title')}")
                 return None
 
@@ -297,7 +298,7 @@ class GitHubNotificationBot:
                 status = details.get('status')
                 conclusion = details.get('conclusion')
                 
-                if status == 'completed' and conclusion in ['cancelled', 'skipped', 'failure']:
+                if status == 'completed' and conclusion in ['cancelled', 'skipped', 'failure']:# Keep this as a secondary, more precise check
                     print(f"    Skipping workflow due to status/conclusion: {subject.get('title', 'No title')} (Status: {status}, Conclusion: {conclusion})")
                     return None
             
@@ -423,7 +424,7 @@ class GitHubNotificationBot:
         # Sort notifications by time (oldest first) to send in chronological order
         notifications.sort(key=lambda n: n['updated_at'])
         
-        for i in range(0, len(notifications), 10):
+        for i in range(0, len(notifications), 20):
             batch = notifications[i:i+10]
             print(f"\nProcessing batch {i//10 + 1} ({len(batch)} notifications)...")
             
