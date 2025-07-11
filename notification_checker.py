@@ -431,23 +431,49 @@ class GitHubNotificationBot:
         # Sort notifications by time (oldest first) to send in chronological order
         notifications.sort(key=lambda n: n['updated_at'])
         
-        for i in range(0, len(notifications), 10):
-            batch = notifications[i:i+10]
-            print(f"\nProcessing batch {i//10 + 1} ({len(batch)} notifications)...")
+        embeds_to_send = []
+        batch_count = 0
+        
+        for i, notif in enumerate(notifications):
+            print(f"\n--- Formatting notification {i+1} for Discord ---")
+            pprint.pprint(notif, depth=2)
+            embed = self.format_notification_for_discord(notif)
             
-            embeds = []
-            for j, notif in enumerate(batch):
-                print(f"\n--- Formatting notification {i+j+1} for Discord ---")
-                pprint.pprint(notif, depth=2)
-                embed = self.format_notification_for_discord(notif)
-                if embed: # Only add if embed is not None
-                    embeds.append(embed)
-            
+            if embed: # Only add if embed is not None
+                embeds_to_send.append(embed)
+                
+            if len(embeds_to_send) >= 10:
+                batch_count += 1
+                discord_payload = {
+                    "embeds": embeds_to_send
+                }
+                
+                print(f"\nSending batch {batch_count} to Discord ({len(embeds_to_send)} notifications)...")
+                try:
+                    response = requests.post(
+                        self.discord_webhook_url,
+                        json=discord_payload,
+                        headers={'Content-Type': 'application/json'}
+                    )
+                    response.raise_for_status()
+                    print(f"SUCCESS: Sent {len(embeds_to_send)} notifications to Discord (Status: {response.status_code})")
+                    embeds_to_send = [] # Clear the batch
+                    print("Waiting 1 second before next batch...")
+                    time.sleep(1)
+                except requests.exceptions.RequestException as e:
+                    print(f"ERROR sending to Discord: {e}")
+                    if hasattr(e, 'response') and e.response is not None:
+                        print(f"Error response status: {e.response.status_code}")
+                        print(f"Error response body: {e.response.text}")
+                    return False
+        
+        # Send any remaining embeds
+        if embeds_to_send:
+            batch_count += 1
             discord_payload = {
-                "embeds": embeds
+                "embeds": embeds_to_send
             }
-            
-            print(f"\nSending batch {i//10 + 1} to Discord...")
+            print(f"\nSending final batch {batch_count} to Discord ({len(embeds_to_send)} notifications)...")
             try:
                 response = requests.post(
                     self.discord_webhook_url,
@@ -455,10 +481,13 @@ class GitHubNotificationBot:
                     headers={'Content-Type': 'application/json'}
                 )
                 response.raise_for_status()
-                print(f"SUCCESS: Sent {len(batch)} notifications to Discord (Status: {response.status_code})")
-                if i + 10 < len(notifications):
-                    print("Waiting 1 second before next batch...")
-                    time.sleep(1)
+                print(f"SUCCESS: Sent {len(embeds_to_send)} notifications to Discord (Status: {response.status_code})")
+            except requests.exceptions.RequestException as e:
+                print(f"ERROR sending to Discord: {e}")
+                if hasattr(e, 'response') and e.response is not None:
+                    print(f"Error response status: {e.response.status_code}")
+                    print(f"Error response body: {e.response.text}")
+                return False
             except requests.exceptions.RequestException as e:
                 print(f"ERROR sending to Discord: {e}")
                 if hasattr(e, 'response') and e.response is not None:
