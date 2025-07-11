@@ -308,7 +308,7 @@ class GitHubNotificationBot:
                         embed_color = self.STATE_COLORS[conclusion]
                         status_value = conclusion.title()
 
-            elif subject_type == 'PullRequest':""
+            elif subject_type == 'PullRequest':
                 if details.get('merged'):
                     status_value = "Merged"
                     embed_color = self.STATE_COLORS['merged']
